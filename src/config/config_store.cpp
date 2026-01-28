@@ -372,23 +372,6 @@ bool WssConfigStore::apply_patch(const JsonObjectConst& patch, String& err, Json
   return changed;
 }
 
-bool WssConfigStore::wizard_set(const char* key, const char* value, String& err) {
-  JsonDocument tmp;
-  tmp.set(value);
-  return wizard_set(key, tmp.as<JsonVariantConst>(), err);
-}
-
-bool WssConfigStore::wizard_set(const char* key, const String& value, String& err) {
-  JsonDocument tmp;
-  tmp.set(value.c_str());
-  return wizard_set(key, tmp.as<JsonVariantConst>(), err);
-}
-
-bool WssConfigStore::wizard_set(const char* key, bool value, String& err) {
-  JsonDocument tmp;
-  tmp.set(value);
-  return wizard_set(key, tmp.as<JsonVariantConst>(), err);
-}
 
 bool WssConfigStore::wizard_set(const char* key, const char* value, String& err) {
   JsonDocument tmp;
