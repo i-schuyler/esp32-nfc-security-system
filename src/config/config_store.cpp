@@ -286,7 +286,7 @@ bool WssConfigStore::setup_completed() const {
 }
 
 String WssConfigStore::setup_last_step() const {
-  if (_doc["setup_last_step"].is<char*>()) return String(_doc["setup_last_step"].as<char*>());
+  if (_doc["setup_last_step"].is<const char*>()) return String(_doc["setup_last_step"].as<const char*>());
   return String("welcome");
 }
 
