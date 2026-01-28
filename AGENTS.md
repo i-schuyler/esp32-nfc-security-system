@@ -24,3 +24,6 @@ This repository is a hardware/security firmware project. Changes must preserve s
 - Push/PR must compile via GitHub Actions.
 - Artifacts are produced only via manual workflow dispatch or release tags.
 
+
+- When CI fails due to toolchain/environment issues, run `tools/toolchain_sanity_check.sh` first and include the results in the next change plan.
+

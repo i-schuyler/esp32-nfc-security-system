@@ -67,3 +67,8 @@ Open:
 
 ### Safety + secret hygiene
 Do not commit secrets (Wi-Fi passwords, tokens, private keys). Redact any discovered secrets immediately and rotate them. 
+
+## Tooling (developer helpers)
+Run the toolchain sanity check (useful when CI/toolchain issues appear):
+```bash
+tools/toolchain_sanity_check.sh
