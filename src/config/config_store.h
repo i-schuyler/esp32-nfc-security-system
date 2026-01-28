@@ -28,7 +28,7 @@ class WssConfigStore {
   bool verify_admin_password(const String& candidate) const;
 
   // Read-only view (internal use)
-  const JsonDocument& doc() const { return _doc; }
+  JsonDocument& doc() { return _doc; }
 
   // Returns the stable device suffix used in default SSID formatting.
   const String& device_suffix() const { return _device_suffix; }
@@ -45,6 +45,15 @@ class WssConfigStore {
 
   // Wizard helper: set a key regardless of "known keys" list (still type-checked).
   bool wizard_set(const char* key, const JsonVariantConst& value, String& err);
+  bool wizard_set(const char* key, const char* value, String& err);
+  bool wizard_set(const char* key, const String& value, String& err);
+  bool wizard_set(const char* key, bool value, String& err);
+  bool wizard_set(const char* key, const char* value, String& err);
+  bool wizard_set(const char* key, const String& value, String& err);
+  bool wizard_set(const char* key, bool value, String& err);
+  bool wizard_set(const char* key, const char* value, String& err);
+  bool wizard_set(const char* key, const String& value, String& err);
+  bool wizard_set(const char* key, bool value, String& err);
 
   // Persists config to NVS.
   bool save(String& err);
