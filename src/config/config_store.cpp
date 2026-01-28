@@ -411,7 +411,7 @@ bool WssConfigStore::wizard_set(const char* key, bool value, String& err) {
 }
 
 
-bool WssConfigStore::wizard_set(const char* key, const JsonVariantConst& value, String& err) {
+bool WssConfigStore::wizard_set_variant(const char* key, const JsonVariantConst& value, String& err) {
   JsonObject root = _doc.as<JsonObject>();
   if (String(key) == "admin_web_password") {
     String pw = value.is<const char*>() ? String(value.as<const char*>()) : String("");
