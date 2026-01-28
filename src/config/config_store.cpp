@@ -373,23 +373,43 @@ bool WssConfigStore::apply_patch(const JsonObjectConst& patch, String& err, Json
 }
 
 
+
 bool WssConfigStore::wizard_set(const char* key, const char* value, String& err) {
-  JsonDocument tmp;
-  tmp.set(value);
-  return wizard_set(key, tmp.as<JsonVariantConst>(), err);
+  JsonObject root = _doc.as<JsonObject>();
+  if (!root.containsKey(key)) { err = "unknown_key"; return false; }
+
+  if (String(key) == "admin_web_password") {
+    String pw = value ? String(value) : String("");
+    if (pw.length() < 8) { err = "admin_password_min_8"; return false; }
+    root["admin_web_password_hash"] = sha256_hex(pw);
+    err = "";
+    return true;
+  }
+
+  root[key] = value;
+  ensure_runtime_defaults();
+  err = "";
+  return true;
 }
+
+
 
 bool WssConfigStore::wizard_set(const char* key, const String& value, String& err) {
-  JsonDocument tmp;
-  tmp.set(value.c_str());
-  return wizard_set(key, tmp.as<JsonVariantConst>(), err);
+  return wizard_set(key, value.c_str(), err);
 }
 
+
+
 bool WssConfigStore::wizard_set(const char* key, bool value, String& err) {
-  JsonDocument tmp;
-  tmp.set(value);
-  return wizard_set(key, tmp.as<JsonVariantConst>(), err);
+  JsonObject root = _doc.as<JsonObject>();
+  if (!root.containsKey(key)) { err = "unknown_key"; return false; }
+
+  root[key] = value;
+  ensure_runtime_defaults();
+  err = "";
+  return true;
 }
+
 
 bool WssConfigStore::wizard_set(const char* key, const JsonVariantConst& value, String& err) {
   JsonObject root = _doc.as<JsonObject>();
