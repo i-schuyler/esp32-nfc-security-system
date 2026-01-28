@@ -110,3 +110,12 @@ The following documents are not part of the canonical “conflict resolver” hi
 - `Troubleshooting_v1_0.md` — user-facing fault symptoms, recovery steps, and UI health indicator expectations
 - `Release_Channels_and_Stability_Promise.md` — release discipline and guarantees for product-grade stability
 - `Platform_Choice_IDF_Note_v1_0.md` — platform rationale and constraints for future migration decisions
+
+---
+
+## Codex + CI Foundation Additions (2026-01-28)
+
+- `AGENTS.md` — Codex guardrails and working rules for safe repo changes.
+- `tools/toolchain_sanity_check.sh` — local environment sanity checks (developer helper).
+- `.github/workflows/firmware-build.yml` — CI compile-check workflow (fast default; optional artifacts as explicitly configured).
+
