@@ -64,7 +64,7 @@ static bool parse_state(const String& s, WssAlarmState& out) {
 
 static uint32_t cfg_u32(const char* key, uint32_t dflt) {
   if (!g_cfg) return dflt;
-  JsonObject root = g_cfg->doc().as<JsonObject>();
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
   if (!root.containsKey(key)) return dflt;
   if (root[key].is<uint32_t>()) return root[key].as<uint32_t>();
   if (root[key].is<int>()) return (uint32_t)root[key].as<int>();
