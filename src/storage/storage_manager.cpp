@@ -14,7 +14,7 @@
 
 #include "../logging/sha256_hex.h"
 
-#include "../version.h"
+#include "version.h"
 
 #if WSS_FEATURE_SD
 #include <SPI.h>
