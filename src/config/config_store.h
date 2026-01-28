@@ -48,12 +48,6 @@ class WssConfigStore {
   bool wizard_set(const char* key, const char* value, String& err);
   bool wizard_set(const char* key, const String& value, String& err);
   bool wizard_set(const char* key, bool value, String& err);
-  bool wizard_set(const char* key, const char* value, String& err);
-  bool wizard_set(const char* key, const String& value, String& err);
-  bool wizard_set(const char* key, bool value, String& err);
-  bool wizard_set(const char* key, const char* value, String& err);
-  bool wizard_set(const char* key, const String& value, String& err);
-  bool wizard_set(const char* key, bool value, String& err);
 
   // Persists config to NVS.
   bool save(String& err);
