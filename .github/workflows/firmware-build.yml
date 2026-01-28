@@ -2,9 +2,7 @@ name: firmware-build
 
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -15,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -25,12 +23,25 @@ jobs:
         with:
           path: |
             ~/.platformio
-          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
-          restore-keys: |
-            ${{ runner.os }}-pio-
+          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'src/**', 'include/**', 'lib/**', 'data/**', 'partitions.csv') }}
 
-      - name: Install PlatformIO Core
-        run: python -m pip install --upgrade platformio
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
 
-      - name: Build firmware (compile check)
+      - name: PlatformIO compile-check
         run: pio run -e esp32dev
+
+      # Build filesystem image + upload artifacts only when manually dispatched or on tags later
+      - name: Build LittleFS image
+        if: github.event_name == 'workflow_dispatch'
+        run: pio run -e esp32dev -t buildfs
+
+      - name: Upload artifacts (firmware + filesystem)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32dev-build
+          path: |
+            .pio/build/esp32dev/firmware.bin
+            .pio/build/esp32dev/littlefs.bin
+            .pio/build/esp32dev/partitions.bin

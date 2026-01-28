@@ -363,7 +363,7 @@ static void handle_wizard_set_step() {
       }
       if (k == "admin_web_password") {
         String e;
-        if (g_cfg->wizard_set("admin_web_password", kv.value(), e)) {
+        if (g_cfg->wizard_set_variant("admin_web_password", kv.value(), e)) {
           changed.add("admin_web_password");
         } else {
           ok = false;
@@ -372,7 +372,7 @@ static void handle_wizard_set_step() {
         continue;
       }
       String e;
-      if (g_cfg->wizard_set(k.c_str(), kv.value(), e)) {
+      if (g_cfg->wizard_set_variant(k.c_str(), kv.value(), e)) {
         changed.add(k);
       } else {
         // Unknown or invalid keys are rejected.

@@ -1,27 +1,13 @@
 # Drift Ledger
 
-Purpose: Track drift risks (doc/code mismatch, duplicated stacks, unclear authority) and their resolution status.
+Purpose:
+- Track mismatches between docs, README, workflows, and code reality.
+- Each entry should include: symptom, impact, proposed fix, and status.
 
 ---
 
-## DL-001 — README repo layout mismatch
-Date: 2026-01-28
-Signal:
-- README describes folders (firmware/, ui/, tools/) that do not match current repo tree.
-Risk:
-- Humans/CI/agents assume incorrect working directories and structure.
-Status: OPEN
-Next action:
-- Update README to reflect the actual PlatformIO root layout (src/, include/, data/, docs/).
-
----
-
-## DL-002 — CI workflow invalid + wrong working directory
-Date: 2026-01-28
-Signal:
-- Workflow file contained invalid YAML and pointed at a non-existent firmware/ directory.
-Risk:
-- CI fails; confidence and feedback loop break.
-Status: IN PROGRESS
-Next action:
-- Replace workflow with compile-check at repo root using PlatformIO.
+## DL1 — 2026-01-28 — README is outdated [TENTATIVE]
+- Symptom: README does not match current repo structure/spec.
+- Impact: onboarding confusion + wrong mental model.
+- Proposed fix: rewrite README to match canonical docs + current structure.
+- Status: open
