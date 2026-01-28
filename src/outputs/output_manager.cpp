@@ -32,7 +32,7 @@ static String norm_pattern(const String& p) {
 
 static String get_cfg_str(const char* key, const char* dflt) {
   if (!g_cfg) return String(dflt);
-  JsonObject root = g_cfg->doc().as<JsonObject>();
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
   if (!root.containsKey(key)) return String(dflt);
   if (root[key].is<const char*>()) return String(root[key].as<const char*>());
   return String(dflt);
@@ -40,7 +40,7 @@ static String get_cfg_str(const char* key, const char* dflt) {
 
 static bool get_cfg_bool(const char* key, bool dflt) {
   if (!g_cfg) return dflt;
-  JsonObject root = g_cfg->doc().as<JsonObject>();
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
   if (!root.containsKey(key)) return dflt;
   if (root[key].is<bool>()) return root[key].as<bool>();
   return dflt;
