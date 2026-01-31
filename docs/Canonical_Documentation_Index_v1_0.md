@@ -119,3 +119,5 @@ The following documents are not part of the canonical “conflict resolver” hi
 - `tools/toolchain_sanity_check.sh` — local environment sanity checks (developer helper).
 - `.github/workflows/firmware-build.yml` — CI compile-check workflow (fast default; optional artifacts as explicitly configured).
 
+
+- Codex CLI: `docs/Codex_CLI_Workflow_and_Safety_v1_0.md` — Repo-scoped guardrails and usage patterns for safe Codex-assisted development.

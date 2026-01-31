@@ -1,0 +1,15 @@
+# .codex/config.toml
+# Repo-scoped Codex safety defaults for a safety-adjacent firmware project.
+# No secrets in this file.
+
+# Ask before executing anything other than known-safe read-only commands.
+approval_policy = "untrusted"
+
+# Default to read-only; explicitly escalate per-session when needed.
+sandbox_mode = "read-only"
+
+# Force ChatGPT login flow (you requested ChatGPT sign-in).
+forced_login_method = "chatgpt"
+
+# Optional: reduce surprise from auto-update prompts (you’re pinning versions anyway).
+check_for_update_on_startup = false
