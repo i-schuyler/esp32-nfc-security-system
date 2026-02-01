@@ -36,7 +36,7 @@ This doc defines all user-adjustable parameters, their meaning, ranges, defaults
 - `wifi_sta_ssid` (secret string)
 - `wifi_sta_password` (secret string)
 - `wifi_ap_ssid` (string, default `Workshop Security System - A1B2`)
-- `wifi_ap_password` (secret string, default set during Setup Wizard)
+- `wifi_ap_password` (secret string, default derived if unset/too short: `ChangeMe-<device_suffix>`; temporary provisioning only; must be changed during setup)
 - `wifi_sta_connect_timeout_s` (int, default 20)
 
 ### NFC / Access

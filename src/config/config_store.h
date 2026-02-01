@@ -26,6 +26,7 @@ class WssConfigStore {
   // Admin web gate
   bool admin_password_set() const;
   bool verify_admin_password(const String& candidate) const;
+  bool ap_password_is_default() const;
 
   // Read-only view (internal use)
   JsonDocument& doc() { return _doc; }
