@@ -27,6 +27,8 @@
 
 // M5: sensors abstraction + status
 #include "sensors/sensor_manager.h"
+// M6: NFC health + scan events (slice 0)
+#include "nfc/nfc_manager.h"
 
 static WebServer server(80);
 static WssConfigStore* g_cfg = nullptr;
@@ -185,6 +187,12 @@ static void handle_status() {
   {
     JsonObject sens = doc.createNestedObject("sensors");
     wss_sensors_write_status_json(sens);
+  }
+
+  // M6: NFC status (append-only, slice 0 health only)
+  {
+    JsonObject nfc = doc.createNestedObject("nfc");
+    wss_nfc_write_status_json(nfc);
   }
 
   bool setup_done = g_cfg ? g_cfg->setup_completed() : false;
