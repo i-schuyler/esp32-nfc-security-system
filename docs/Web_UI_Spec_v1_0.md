@@ -109,6 +109,7 @@ V1 requirement:
 2) **Time & RTC** (RTC detected? set timezone; verify timestamp)
 3) **Storage** (SD detected? logging status; choose retention)
 4) **Network** (set STA credentials (optional), set AP SSID/password; apply safely)
+   - AP password must be changed from the default before completing setup.
 5) **NFC** (add Admin card(s), add User card(s) if desired; confirm permissions)
 6) **Sensors** (enable motion/door/tamper; basic calibration/sensitivity)
 7) **Outputs** (test horn/light; set default patterns)

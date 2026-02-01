@@ -96,6 +96,7 @@
       addInput('wiz_sta_ssid', 'STA SSID', 'text');
       addInput('wiz_sta_password', 'STA Password', 'password');
       addInput('wiz_ap_password', 'AP Password (min 8)', 'password');
+      addLabel('AP password must be changed from the default to complete setup.');
       return;
     }
 

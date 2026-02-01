@@ -33,6 +33,7 @@ Rules:
 
 - AP is always password protected (WPA2).
 - Default SSID format: `Workshop Security System - A1B2` (suffix from ESP32 MAC last bytes).
+- If `wifi_ap_password` is unset or too short, `config_store` derives `ChangeMe-<device_suffix>` for temporary provisioning and it must be changed during setup (enforcement added later).
 - UI must clearly show when you’re connected to AP vs STA.
 
 ## 4) Web UI Access Control

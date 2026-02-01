@@ -110,6 +110,10 @@ The following documents are not part of the canonical “conflict resolver” hi
 - `Troubleshooting_v1_0.md` — user-facing fault symptoms, recovery steps, and UI health indicator expectations
 - `Release_Channels_and_Stability_Promise.md` — release discipline and guarantees for product-grade stability
 - `Platform_Choice_IDF_Note_v1_0.md` — platform rationale and constraints for future migration decisions
+- `safety-appendix.md` — security boundaries, offline assumptions, and safety defaults (public release)
+- `SECURITY.md` — security reporting guidance (public release)
+- `CONTRIBUTING.md` — contribution policy and issue guidance (public release)
+- `LICENSE` — Apache-2.0 license text
 
 ---
 

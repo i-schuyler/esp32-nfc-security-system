@@ -295,6 +295,12 @@ bool WssConfigStore::admin_password_set() const {
   return h.length() == 64;
 }
 
+bool WssConfigStore::ap_password_is_default() const {
+  String ap_pass = _doc["wifi_ap_password"] | String("");
+  String derived = String("ChangeMe-") + _device_suffix;
+  return ap_pass == derived;
+}
+
 bool WssConfigStore::verify_admin_password(const String& candidate) const {
   String stored = _doc["admin_web_password_hash"] | String("");
   if (stored.length() != 64) return false;

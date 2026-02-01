@@ -418,6 +418,12 @@ static void handle_wizard_complete() {
     return;
   }
 
+  if (g_cfg->ap_password_is_default()) {
+    g_log->log_warn("ui", "wizard_blocked", "wizard completion blocked: AP password still default");
+    server.send(409, "application/json", "{\"error\":\"ap_password_change_required\"}");
+    return;
+  }
+
   String err;
   g_cfg->wizard_set("setup_completed", true, err);
   g_cfg->wizard_set("setup_last_step", "complete", err);
