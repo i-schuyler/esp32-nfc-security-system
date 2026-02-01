@@ -42,7 +42,7 @@ This doc defines all user-adjustable parameters, their meaning, ranges, defaults
 ### NFC / Access
 - `allow_user_arm` (bool, default true)
 - `allow_user_disarm` (bool, default true)
-- `allow_user_silence` (bool, default true/false — decision)
+- `allow_user_silence` (bool, default true)
 - `invalid_scan_window_s` (int, default 30)
 - `invalid_scan_max` (int, default 5)
 - `lockout_duration_s` (int, default 60)
@@ -118,8 +118,7 @@ M5 adds a minimal, generic GPIO-digital interpretation layer. These keys are onl
 ### NFC optional URL record
 - `nfc_url_record_enabled` (bool, default false)
 - `nfc_url_record_preserve_if_possible` (bool, default true)
-- `nfc_url` (string, default `http://192.168.4.1/`)
-- `nfc_url` (string, default auto; e.g. `http://192.168.4.1/` in AP mode)
+- `nfc_url` (string, default auto: AP=`http://192.168.4.1/`; STA/LAN=admin-supplied)
 
 ### Default AP SSID
 - `wifi_ap_ssid_base` (string, default "Workshop Security System")

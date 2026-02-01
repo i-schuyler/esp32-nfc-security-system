@@ -66,7 +66,7 @@ Interpretation:
 - Outputs active in “alarm pattern” (horn + light patterns defined in config).
 - NFC actions:
 - Web UI actions (if enabled): Clear / Silence
-  - Authorized “Clear Alarm” transitions to DISARMED (or ARMED if you choose re-arm-after-clear; **must be decided**).
+  - Authorized “Clear Alarm” transitions to DISARMED (or ARMED if you choose re-arm-after-clear; **must be decided**); **Admin required [LOCKED]**.
   - Optional: Silence transitions to SILENCED (see below).
 - Clearing TRIGGERED performs:
   - incident summary log
@@ -108,10 +108,10 @@ Each transition MUST log an event with `event_type`, `from_state`, `to_state`, a
 |---|---|---|---|---|
 | DISARMED | ARMED | NFC: Arm | Authorized card; not locked out | Write “armed” record to NFC (decision: minimal vs full) |
 | DISARMED | ARMED | Web UI: Arm | Web control enabled; Admin Config Mode active | Logged; NFC writeback only if NFC enabled |
-| ARMED | DISARMED | NFC: Disarm | Authorized card; not locked out | Log who/role; optionally write “disarmed” record |
+| ARMED | DISARMED | NFC: Disarm | Authorized card; not locked out | Log who/role; no NFC writeback on disarm |
 | ARMED | DISARMED | Web UI: Disarm | Web control enabled; Admin Config Mode active | Logged |
 | ARMED | TRIGGERED | Sensor event | Trigger policy satisfied | Latched |
-| TRIGGERED | DISARMED | NFC: Clear | **Admin** required (recommended) | Writes incident summary to NFC |
+| TRIGGERED | DISARMED | NFC: Clear | **Admin** required [LOCKED] | Writes incident summary to NFC |
 | ARMED/TRIGGERED | SILENCED | NFC: Silence | Authorized per role policy | Does not clear incident |
 | ARMED/TRIGGERED | SILENCED | Web UI: Silence | Web control enabled; Admin Config Mode active | Logged |
 | ANY | FAULT | Fault detected | Fault policy | FAULT dominates |
@@ -122,6 +122,7 @@ Each transition MUST log an event with `event_type`, `from_state`, `to_state`, a
 Lockout is **not** a primary state; it is an orthogonal guard condition:
 - After N invalid scans within window W → lockout duration L
 - While locked out: ignore NFC actions, but continue logging “scan ignored due to lockout”
+- A valid Admin scan may clear lockout early; when cleared, the scan is processed normally and the clear action is logged
 - UI shows lockout remaining time
 
 ## 7) Maintenance/Test Mode (Orthogonal)

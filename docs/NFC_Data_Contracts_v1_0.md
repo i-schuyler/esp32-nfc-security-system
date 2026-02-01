@@ -27,7 +27,7 @@ Recommended minimum:
 | Arm | ✅ | ✅ (configurable) |
 | Disarm | ✅ | ✅ (configurable) |
 | Silence | ✅ | ✅ (configurable) |
-| Clear triggered alarm | ✅ | ❌ (recommended) |
+| Clear triggered alarm | ✅ [LOCKED] | ❌ |
 | Enter maintenance/test mode | ✅ | ❌ |
 | Change Wi‑Fi creds | ✅ | ❌ |
 | Add/remove cards | ✅ | ❌ |
@@ -39,6 +39,7 @@ All of the above are configurable, but the defaults should minimize surprise.
 - Rate-limit invalid scans.
 - After N invalid scans within W seconds → lockout for L seconds.
 - All scans are logged (including those ignored due to lockout).
+- A valid Admin scan may clear lockout early; the clear action is logged and the scan is processed normally.
 
 ## 5) On-Tag Data Written by Device
 
@@ -47,6 +48,7 @@ All of the above are configurable, but the defaults should minimize surprise.
 Two separate writebacks requested:
 1) **Armed state written when user arms the system**
 2) **Incident summary written when clearing a triggered alarm**
+3) **No writeback on disarm** (disarm is logged only)
 
 ### Privacy rule
 Never store secrets on the tag. Store only operational summaries.
@@ -102,6 +104,10 @@ Two `type` values are defined in V1:
 2) `incident` — written when clearing a triggered alarm
 
 ### 6.5 Full field set (preferred, human-readable)
+
+Timestamp validity:
+- When time is valid, timestamps are ISO-8601 strings.
+- When time is unavailable, timestamp fields are set to `"u"` (unknown); ultra-minimal may omit timestamps.
 
 Example `armed` payload:
 ```json
