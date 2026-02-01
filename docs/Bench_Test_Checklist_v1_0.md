@@ -121,6 +121,22 @@ F6. Provisioning session (admin-only).
 - Add a User card, add an Admin card, remove a card.
 - Expected: each step logged; allowlist updates visible in UI.
 
+F7. Arm writeback.
+- Arm via authorized NFC.
+- Expected: tag receives “armed” system record; if capacity is small, minimal/ultra is used and truncation is logged.
+
+F8. Disarm does not write back.
+- Disarm via authorized NFC.
+- Expected: state changes + logs; tag NDEF system record is unchanged by disarm.
+
+F9. Incident writeback + capacity fallback.
+- Trigger alarm, then clear via Admin NFC.
+- Expected: incident summary written; minimal/ultra fallback occurs on smaller tags; omission of optional URL record is logged if needed.
+
+F10. Time-invalid sentinel.
+- Boot without valid RTC/time, then arm and clear.
+- Expected: timestamps are `"u"` (unknown) or omitted in ultra-minimal; logs/UI reflect time invalid.
+
 ## G) State machine and control parity (NFC and web)
 
 G1. DISARMED → ARMED via NFC (if enabled).
