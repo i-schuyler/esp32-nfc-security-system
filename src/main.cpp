@@ -22,6 +22,8 @@
 // M5: sensors abstraction (per-sensor enable/disable + trigger routing)
 #include "sensors/sensor_manager.h"
 
+// M6: NFC health + scan events (slice 0)
+#include "nfc/nfc_manager.h"
 
 static WssEventLogger g_log;
 static WssConfigStore g_cfg;
@@ -72,6 +74,9 @@ void setup() {
   // M5: sensors (safe when pins are unset; reports unconfigured status).
   wss_sensors_begin(&g_cfg, &g_log);
 
+  // M6 slice 0: NFC health + scan events only.
+  wss_nfc_begin(&g_cfg, &g_log);
+
   // Apply outputs for initial state after state is known.
   g_last_applied_state = wss_state_status().state;
   wss_outputs_apply_state(g_last_applied_state);
@@ -91,6 +96,7 @@ void loop() {
 #endif
   wss_state_loop();
   wss_sensors_loop();
+  wss_nfc_loop();
   // Apply outputs on state changes (deterministic, no silent transitions).
   {
     String s = wss_state_status().state;
