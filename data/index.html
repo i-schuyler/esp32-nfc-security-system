@@ -121,6 +121,18 @@
     </div>
   </section>
 
+  <section class="card hidden" id="otaCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Firmware update</h2>
+    <p class="small muted">Uploading firmware writes to the inactive partition and reboots on success.</p>
+    <div class="row">
+      <input id="otaFile" type="file" accept=".bin" />
+      <button id="btnOtaUpload">Upload firmware</button>
+      <div class="kv"><div class="k">File</div><div class="v" id="otaFileName">—</div></div>
+      <div class="kv"><div class="k">Size</div><div class="v" id="otaFileSize">—</div></div>
+      <div class="kv"><div class="k">Result</div><div class="v" id="otaResult">—</div></div>
+    </div>
+  </section>
+
   <script src="/app.js"></script>
 </body>
 </html>

@@ -9,6 +9,8 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <esp_system.h>
+#include <Update.h>
+#include <esp_ota_ops.h>
 
 #include "diagnostics.h"
 #include "flash_fs.h"
@@ -36,6 +38,23 @@ static WssEventLogger* g_log = nullptr;
 static const uint32_t kLogDownloadMaxBytes = 512 * 1024;
 static const size_t kMaxLogListItems = 128;
 static const size_t kMaxFallbackItems = 64;
+static const uint32_t kOtaRebootDelayMs = 200;
+
+struct OtaSession {
+  bool in_progress = false;
+  bool allowed = false;
+  bool available = false;
+  bool ok = false;
+  bool done = false;
+  uint32_t expected_size = 0;
+  uint32_t written = 0;
+  String error;
+  String message;
+  String last_result;
+  String last_message;
+};
+
+static OtaSession g_ota;
 
 struct AdminSession {
   bool active = false;
@@ -84,6 +103,15 @@ static bool admin_required(const char* action_name) {
     return false;
   }
   return true;
+}
+
+static bool admin_session_ok() {
+  if (g_admin.expired()) {
+    g_admin.clear();
+  }
+  if (!g_admin.active) return false;
+  String got = server.header("X-Admin-Token");
+  return got == g_admin.token;
 }
 
 static void send_json(int code, const JsonDocument& doc) {
@@ -231,6 +259,162 @@ static void handle_events() {
   DynamicJsonDocument out(8192);
   if (g_log) g_log->recent_events(out, limit);
   send_json(200, out);
+}
+
+static bool ota_available() {
+  const esp_partition_t* next = esp_ota_get_next_update_partition(nullptr);
+  return next != nullptr;
+}
+
+static void log_ota_event(const char* severity, const char* msg, const char* result,
+                          uint32_t size_bytes, const char* reason) {
+  if (!g_log) return;
+  StaticJsonDocument<192> extra;
+  if (size_bytes) extra["size_bytes"] = size_bytes;
+  if (result && result[0]) extra["result"] = result;
+  if (reason && reason[0]) extra["reason"] = reason;
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  if (severity && strcmp(severity, "warn") == 0) {
+    g_log->log_warn("ui", "ota_update", msg, &o);
+  } else if (severity && strcmp(severity, "error") == 0) {
+    g_log->log_error("ui", "ota_update", msg, &o);
+  } else {
+    g_log->log_info("ui", "ota_update", msg, &o);
+  }
+}
+
+static void handle_ota_status() {
+  if (!admin_required("ota_status")) return;
+  StaticJsonDocument<256> doc;
+  doc["firmware_name"] = WSS_FIRMWARE_NAME;
+  doc["firmware_version"] = WSS_FIRMWARE_VERSION;
+  doc["ota_available"] = ota_available();
+  if (g_ota.last_result.length()) doc["last_result"] = g_ota.last_result;
+  if (g_ota.last_message.length()) doc["last_message"] = g_ota.last_message;
+  send_json(200, doc);
+}
+
+static void handle_ota_upload_done() {
+  if (!admin_required("ota_upload")) return;
+  StaticJsonDocument<256> out;
+  if (!g_ota.done) {
+    out["ok"] = false;
+    out["error"] = "upload_incomplete";
+    out["message"] = "Upload did not complete.";
+    send_json(409, out);
+    return;
+  }
+
+  if (!g_ota.ok) {
+    out["ok"] = false;
+    out["error"] = g_ota.error.length() ? g_ota.error : String("upload_failed");
+    out["message"] = g_ota.message.length() ? g_ota.message : String("Upload failed.");
+    send_json(200, out);
+    return;
+  }
+
+  out["ok"] = true;
+  out["reboot"] = true;
+  out["message"] = g_ota.message;
+  send_json(200, out);
+  delay(kOtaRebootDelayMs);
+  ESP.restart();
+}
+
+static void handle_ota_upload() {
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    g_ota = OtaSession{};
+    g_ota.available = ota_available();
+    g_ota.allowed = admin_session_ok();
+    g_ota.in_progress = true;
+    g_ota.expected_size = upload.totalSize;
+    g_ota.written = 0;
+    if (!g_ota.available) {
+      g_ota.error = "ota_not_supported";
+      g_ota.message = "OTA update is not available on this device.";
+      g_ota.done = true;
+      g_ota.in_progress = false;
+      log_ota_event("error", "ota update failed", "fail", 0, "ota_not_supported");
+      return;
+    }
+    if (!g_ota.allowed) {
+      g_ota.error = "admin_required";
+      g_ota.message = "Admin mode required.";
+      g_ota.done = true;
+      g_ota.in_progress = false;
+      return;
+    }
+    bool ok = false;
+    if (g_ota.expected_size > 0) {
+      ok = Update.begin(g_ota.expected_size, U_FLASH);
+    } else {
+      ok = Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH);
+    }
+    if (!ok) {
+      g_ota.error = "update_begin_failed";
+      g_ota.message = "Update could not start.";
+      g_ota.done = true;
+      g_ota.in_progress = false;
+      log_ota_event("error", "ota update failed", "fail", g_ota.expected_size, "begin_failed");
+      Update.abort();
+      return;
+    }
+    log_ota_event("info", "ota update started", "started", g_ota.expected_size, "");
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (!g_ota.in_progress || g_ota.error.length() || !g_ota.allowed) return;
+    size_t written = Update.write(upload.buf, upload.currentSize);
+    g_ota.written += written;
+    if (written != upload.currentSize) {
+      g_ota.error = "write_failed";
+      g_ota.message = "Update failed during upload.";
+      g_ota.done = true;
+      g_ota.in_progress = false;
+      Update.abort();
+      log_ota_event("error", "ota update failed", "fail", g_ota.expected_size, "write_failed");
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (!g_ota.allowed) return;
+    if (!g_ota.error.length()) {
+      if (g_ota.written == 0) {
+        g_ota.error = "empty_upload";
+        g_ota.message = "Upload was empty.";
+        Update.abort();
+      } else if (!Update.end(true)) {
+        g_ota.error = "update_end_failed";
+        g_ota.message = "Update could not be finalized.";
+      } else if (!Update.isFinished()) {
+        g_ota.error = "update_incomplete";
+        g_ota.message = "Update did not complete.";
+      } else {
+        g_ota.ok = true;
+        g_ota.message = "Rebooting now. Reconnect to the device Wi-Fi.";
+      }
+    }
+    g_ota.done = true;
+    g_ota.in_progress = false;
+    if (g_ota.ok) {
+      g_ota.last_result = "success";
+      g_ota.last_message = g_ota.message;
+      log_ota_event("info", "ota update success", "success", g_ota.expected_size, "");
+      log_ota_event("info", "ota rebooting", "reboot", 0, "");
+    } else {
+      g_ota.last_result = "fail";
+      g_ota.last_message = g_ota.message;
+      log_ota_event("error", "ota update failed", "fail", g_ota.expected_size,
+        g_ota.error.c_str());
+    }
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    if (!g_ota.allowed) return;
+    g_ota.error = "upload_aborted";
+    g_ota.message = "Upload was cancelled.";
+    g_ota.done = true;
+    g_ota.in_progress = false;
+    Update.abort();
+    g_ota.last_result = "fail";
+    g_ota.last_message = g_ota.message;
+    log_ota_event("warn", "ota update failed", "fail", g_ota.expected_size, "upload_aborted");
+  }
 }
 
 static bool parse_log_range(const String& range, WssLogRange& out) {
@@ -837,6 +1021,8 @@ void wss_web_begin(WssConfigStore& cfg, WssEventLogger& log) {
   server.on("/api/events", HTTP_GET, handle_events);
   server.on("/api/logs/list", HTTP_GET, handle_logs_list);
   server.on("/api/logs/download", HTTP_GET, handle_logs_download);
+  server.on("/api/ota/status", HTTP_GET, handle_ota_status);
+  server.on("/api/ota/upload", HTTP_POST, handle_ota_upload_done, handle_ota_upload);
 
   // Admin session
   server.on("/api/admin/status", HTTP_GET, handle_admin_status);
