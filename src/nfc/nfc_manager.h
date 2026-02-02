@@ -26,6 +26,9 @@ struct WssNfcStatus {
   bool lockout_active = false;
   uint32_t lockout_remaining_s = 0;
   String lockout_until_ts;
+  bool hold_active = false;
+  bool hold_ready = false;
+  uint32_t hold_progress_s = 0;
   uint32_t last_scan_ms = 0;
   uint32_t last_scan_ok_ms = 0;
   uint32_t last_scan_fail_ms = 0;
