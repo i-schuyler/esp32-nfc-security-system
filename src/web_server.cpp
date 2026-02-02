@@ -550,6 +550,52 @@ static void handle_control_action(const char* which) {
   }
 }
 
+static void handle_nfc_provision_start() {
+  if (!admin_required("nfc_provision_start")) return;
+  StaticJsonDocument<256> body;
+  DeserializationError de = deserializeJson(body, server.arg("plain"));
+  if (de) {
+    server.send(400, "application/json", "{\"error\":\"bad_json\"}");
+    return;
+  }
+  String mode = body["mode"] | String("");
+  if (!mode.length()) {
+    server.send(400, "application/json", "{\"error\":\"missing_mode\"}");
+    return;
+  }
+  if (!wss_nfc_provision_start(mode.c_str())) {
+    server.send(409, "application/json", "{\"error\":\"provision_start_failed\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handle_nfc_provision_mode() {
+  if (!admin_required("nfc_provision_mode")) return;
+  StaticJsonDocument<256> body;
+  DeserializationError de = deserializeJson(body, server.arg("plain"));
+  if (de) {
+    server.send(400, "application/json", "{\"error\":\"bad_json\"}");
+    return;
+  }
+  String mode = body["mode"] | String("");
+  if (!mode.length()) {
+    server.send(400, "application/json", "{\"error\":\"missing_mode\"}");
+    return;
+  }
+  if (!wss_nfc_provision_set_mode(mode.c_str())) {
+    server.send(409, "application/json", "{\"error\":\"provision_mode_failed\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handle_nfc_provision_stop() {
+  if (!admin_required("nfc_provision_stop")) return;
+  wss_nfc_provision_stop("admin_stop");
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void serve_file_or_404(const String& path, const String& contentType) {
   if (!LittleFS.exists(path)) {
     server.send(404, "text/plain", "Not found");
@@ -600,6 +646,11 @@ void wss_web_begin(WssConfigStore& cfg, WssEventLogger& log) {
   server.on("/api/control/arm", HTTP_POST, []() { if (!admin_required("control_arm")) return; handle_control_action("arm"); });
   server.on("/api/control/disarm", HTTP_POST, []() { if (!admin_required("control_disarm")) return; handle_control_action("disarm"); });
   server.on("/api/control/silence", HTTP_POST, []() { if (!admin_required("control_silence")) return; handle_control_action("silence"); });
+
+  // M6: NFC provisioning (admin only).
+  server.on("/api/nfc/provision/start", HTTP_POST, handle_nfc_provision_start);
+  server.on("/api/nfc/provision/mode", HTTP_POST, handle_nfc_provision_mode);
+  server.on("/api/nfc/provision/stop", HTTP_POST, handle_nfc_provision_stop);
 
   // UI root
   server.on("/", HTTP_GET, []() {

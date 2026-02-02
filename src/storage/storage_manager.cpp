@@ -164,6 +164,13 @@ static String log_path_for(time_t now) {
   return String("/logs/") + y + String("/") + m + String("/events_") + d + String(".txt");
 }
 
+static bool ensure_nfc_dir() {
+  if (!g_sd.exists("/nfc")) {
+    if (!g_sd.mkdir("/nfc")) return false;
+  }
+  return true;
+}
+
 static bool sd_read_last_hash(const String& path, String& out_hash) {
   out_hash = String(kZeroHash64);
   FsFile f = g_sd.open(path.c_str(), O_RDONLY);
@@ -272,6 +279,72 @@ static bool open_log_file_if_needed(time_t now) {
     }
   }
   return true;
+}
+
+bool wss_storage_write_allowlist(const String& payload, String& err) {
+#if !WSS_FEATURE_SD
+  err = "sd_disabled";
+  return false;
+#else
+  if (!g_status.sd_mounted) {
+    err = "sd_not_mounted";
+    return false;
+  }
+  if (!ensure_nfc_dir()) {
+    err = "nfc_dir_create_failed";
+    return false;
+  }
+  FsFile f = g_sd.open("/nfc/allowlist.json", O_WRONLY | O_CREAT | O_TRUNC);
+  if (!f) {
+    err = "allowlist_open_failed";
+    return false;
+  }
+  int32_t wrote = f.write(payload.c_str(), payload.length());
+  f.close();
+  if (wrote < 0 || (size_t)wrote != payload.length()) {
+    err = "allowlist_write_failed";
+    return false;
+  }
+  return true;
+#endif
+}
+
+bool wss_storage_read_allowlist(String& payload, String& err) {
+#if !WSS_FEATURE_SD
+  err = "sd_disabled";
+  return false;
+#else
+  if (!g_status.sd_mounted) {
+    err = "sd_not_mounted";
+    return false;
+  }
+  FsFile f = g_sd.open("/nfc/allowlist.json", O_RDONLY);
+  if (!f) {
+    err = "allowlist_missing";
+    return false;
+  }
+  uint64_t sz = f.fileSize();
+  if (sz > 16384) {
+    f.close();
+    err = "allowlist_too_large";
+    return false;
+  }
+  payload = "";
+  payload.reserve((size_t)sz + 8);
+  char buf[129];
+  while (f.available()) {
+    int32_t got = f.read(buf, sizeof(buf) - 1);
+    if (got <= 0) break;
+    buf[got] = 0;
+    payload.concat(String(buf));
+  }
+  f.close();
+  if (!payload.length()) {
+    err = "allowlist_empty";
+    return false;
+  }
+  return true;
+#endif
 }
 
 static bool sd_try_mount(const char* reason) {

@@ -36,6 +36,10 @@ static uint32_t g_hold_started_ms = 0;
 static uint32_t g_hold_last_seen_ms = 0;
 static String g_hold_taghash;
 static uint32_t g_last_hold_cancel_log_ms = 0;
+static bool g_prov_active = false;
+static uint32_t g_prov_until_ms = 0;
+static String g_prov_mode = "none";
+static const uint32_t kProvisionTimeoutS = 60;
 
 static bool feature_enabled() {
 #if defined(WSS_FEATURE_NFC) && WSS_FEATURE_NFC
@@ -150,6 +154,18 @@ static void log_hold_event(const char* event_type, const char* reason, const cha
   if (taghash.length()) extra["tag_prefix"] = taghash.substring(0, 8);
   JsonObjectConst o = extra.as<JsonObjectConst>();
   g_log->log_info("nfc", event_type, "nfc hold event", &o);
+}
+
+static void log_prov_event(const char* action, const char* outcome, const char* role,
+                           const String& taghash) {
+  if (!g_log) return;
+  StaticJsonDocument<192> extra;
+  if (action && action[0]) extra["action"] = action;
+  if (outcome && outcome[0]) extra["outcome"] = outcome;
+  if (role && role[0]) extra["role"] = role;
+  if (taghash.length()) extra["tag_prefix"] = taghash.substring(0, 8);
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  g_log->log_info("nfc", "nfc_provision", "nfc provisioning event", &o);
 }
 
 static uint32_t cfg_u32(const char* k, uint32_t def) {
@@ -277,6 +293,19 @@ static void hold_tick(uint32_t now_ms) {
   }
 }
 
+static bool prov_mode_valid(const String& mode) {
+  return mode == "add_user" || mode == "add_admin" || mode == "remove";
+}
+
+static void prov_tick(uint32_t now_ms) {
+  if (!g_prov_active) return;
+  if ((int32_t)(g_prov_until_ms - now_ms) <= 0) {
+    g_prov_active = false;
+    g_prov_mode = "none";
+    if (g_log) g_log->log_info("nfc", "provision_timeout", "nfc provisioning timeout");
+  }
+}
+
 static void invalid_scan_record(uint32_t now_ms, uint32_t window_s, uint32_t max_scans, uint32_t duration_s) {
   if (max_scans == 0 || window_s == 0 || duration_s == 0) return;
   if (max_scans > kMaxInvalidScans) max_scans = kMaxInvalidScans;
@@ -344,6 +373,10 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_hold_last_seen_ms = 0;
   g_hold_taghash = "";
   g_last_hold_cancel_log_ms = 0;
+  g_prov_active = false;
+  g_prov_until_ms = 0;
+  g_prov_mode = "none";
+  (void)wss_nfc_allowlist_begin(log);
 
   if (!g_status.feature_enabled) {
     set_health_disabled_build();
@@ -395,6 +428,7 @@ void wss_nfc_loop() {
   set_health_unavailable();
   lockout_update(now_ms);
   hold_tick(now_ms);
+  prov_tick(now_ms);
 
   static const uint32_t kPollIntervalMs = 150;
   if ((uint32_t)(now_ms - g_last_poll_ms) < kPollIntervalMs) return;
@@ -421,6 +455,7 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
   }
   uint32_t now_ms = millis();
   lockout_update(now_ms);
+  prov_tick(now_ms);
 
   String taghash = wss_nfc_taghash(uid, uid_len);
   WssNfcRole role = wss_nfc_allowlist_get_role(taghash);
@@ -451,6 +486,23 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
       }
       return;
     }
+  }
+
+  if (g_prov_active) {
+    if (debounced(taghash, now_ms)) return;
+    if (g_prov_mode == "add_user") {
+      bool changed = wss_nfc_allowlist_add(taghash, WSS_NFC_ROLE_USER, g_log);
+      log_prov_event("add_user", changed ? "added" : "unchanged", "user", taghash);
+    } else if (g_prov_mode == "add_admin") {
+      bool changed = wss_nfc_allowlist_add(taghash, WSS_NFC_ROLE_ADMIN, g_log);
+      log_prov_event("add_admin", changed ? "added" : "unchanged", "admin", taghash);
+    } else if (g_prov_mode == "remove") {
+      bool removed = wss_nfc_allowlist_remove(taghash, g_log);
+      log_prov_event("remove", removed ? "removed" : "not_found", "", taghash);
+    } else {
+      log_prov_event("unknown", "rejected", "", taghash);
+    }
+    return;
   }
 
   if (hold_ready) {
@@ -520,10 +572,56 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
   log_action_event("tap", "rejected", "state_not_supported_in_slice2", role_str, taghash);
 }
 
+bool wss_nfc_provision_start(const char* mode) {
+  if (!mode || !mode[0]) return false;
+  String m(mode);
+  if (!prov_mode_valid(m)) return false;
+  g_prov_active = true;
+  g_prov_mode = m;
+  g_prov_until_ms = millis() + kProvisionTimeoutS * 1000UL;
+  if (g_log) {
+    StaticJsonDocument<128> extra;
+    extra["mode"] = g_prov_mode;
+    extra["timeout_s"] = kProvisionTimeoutS;
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_info("nfc", "provision_start", "nfc provisioning started", &o);
+  }
+  return true;
+}
+
+bool wss_nfc_provision_set_mode(const char* mode) {
+  if (!g_prov_active) return false;
+  if (!mode || !mode[0]) return false;
+  String m(mode);
+  if (!prov_mode_valid(m)) return false;
+  g_prov_mode = m;
+  if (g_log) {
+    StaticJsonDocument<96> extra;
+    extra["mode"] = g_prov_mode;
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_info("nfc", "provision_mode", "nfc provisioning mode set", &o);
+  }
+  return true;
+}
+
+void wss_nfc_provision_stop(const char* reason) {
+  if (!g_prov_active) return;
+  g_prov_active = false;
+  g_prov_until_ms = 0;
+  g_prov_mode = "none";
+  if (g_log) {
+    StaticJsonDocument<96> extra;
+    if (reason && reason[0]) extra["reason"] = reason;
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_info("nfc", "provision_stop", "nfc provisioning stopped", &o);
+  }
+}
+
 WssNfcStatus wss_nfc_status() {
   uint32_t now_ms = millis();
   lockout_update(now_ms);
   hold_tick(now_ms);
+  prov_tick(now_ms);
   g_status.hold_active = g_hold_active;
   g_status.hold_ready = g_hold_ready;
   if (g_hold_active && g_hold_started_ms != 0) {
@@ -531,6 +629,13 @@ WssNfcStatus wss_nfc_status() {
     g_status.hold_progress_s = elapsed / 1000UL;
   } else {
     g_status.hold_progress_s = 0;
+  }
+  g_status.provisioning_active = g_prov_active;
+  g_status.provisioning_mode = g_prov_active ? g_prov_mode : "none";
+  if (g_prov_active && g_prov_until_ms > now_ms) {
+    g_status.provisioning_remaining_s = (g_prov_until_ms - now_ms) / 1000UL;
+  } else {
+    g_status.provisioning_remaining_s = 0;
   }
   return g_status;
 }
@@ -556,4 +661,7 @@ void wss_nfc_write_status_json(JsonObject out) {
   out["hold_active"] = st.hold_active;
   out["hold_ready"] = st.hold_ready;
   out["hold_progress_s"] = st.hold_progress_s;
+  out["provisioning_active"] = st.provisioning_active;
+  out["provisioning_mode"] = st.provisioning_mode;
+  out["provisioning_remaining_s"] = st.provisioning_remaining_s;
 }
