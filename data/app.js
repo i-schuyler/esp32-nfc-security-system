@@ -6,6 +6,7 @@
     adminToken: localStorage.getItem('wss_admin_token') || '',
     setupRequired: true,
     lastStep: 'welcome',
+    adminMode: 'off',
     adminActive: false,
     adminRemainingS: 0,
   };
@@ -164,8 +165,9 @@
 
     state.setupRequired = !!j.setup_required;
     state.lastStep = j.setup_last_step || 'welcome';
-    state.adminActive = !!j.admin_mode_active;
+    state.adminMode = j.admin_mode || (j.admin_mode_active ? 'authenticated' : 'off');
     state.adminRemainingS = j.admin_mode_remaining_s || 0;
+    state.adminActive = state.adminMode === 'authenticated';
 
     setText('wifiMode', j.wifi_mode || '—');
     setText('ip', j.ip || '—');
@@ -186,7 +188,13 @@
     setText('state', j.state || '—');
 
     setText('setup', state.setupRequired ? `REQUIRED (${state.lastStep})` : 'COMPLETE');
-    setText('admin', state.adminActive ? `ACTIVE (${state.adminRemainingS}s)` : 'INACTIVE');
+    let adminText = 'OFF';
+    if (state.adminMode === 'eligible') {
+      adminText = `ELIGIBLE (${state.adminRemainingS}s)`;
+    } else if (state.adminMode === 'authenticated') {
+      adminText = `AUTHENTICATED (${state.adminRemainingS}s)`;
+    }
+    setText('admin', adminText);
 
     $('wizStep').value = state.lastStep;
     renderWizardFields($('wizStep').value);

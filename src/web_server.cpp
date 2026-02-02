@@ -200,8 +200,21 @@ static void handle_status() {
   doc["setup_last_step"] = g_cfg ? g_cfg->setup_last_step() : "welcome";
 
   if (g_admin.expired()) g_admin.clear();
+  bool gate_required = wss_nfc_admin_gate_required();
+  bool eligible = gate_required && wss_nfc_admin_eligible_active();
+  uint32_t eligible_remaining_s = eligible ? wss_nfc_admin_eligible_remaining_s() : 0;
+  const char* admin_mode = "off";
+  uint32_t admin_remaining_s = 0;
+  if (g_admin.active) {
+    admin_mode = "authenticated";
+    admin_remaining_s = g_admin.remaining_s();
+  } else if (eligible) {
+    admin_mode = "eligible";
+    admin_remaining_s = eligible_remaining_s;
+  }
   doc["admin_mode_active"] = g_admin.active;
-  doc["admin_mode_remaining_s"] = g_admin.remaining_s();
+  doc["admin_mode_remaining_s"] = admin_remaining_s;
+  doc["admin_mode"] = admin_mode;
 
   send_json(200, doc);
 }
@@ -220,8 +233,21 @@ static void handle_events() {
 static void handle_admin_status() {
   StaticJsonDocument<256> doc;
   if (g_admin.expired()) g_admin.clear();
+  bool gate_required = wss_nfc_admin_gate_required();
+  bool eligible = gate_required && wss_nfc_admin_eligible_active();
+  uint32_t eligible_remaining_s = eligible ? wss_nfc_admin_eligible_remaining_s() : 0;
+  const char* admin_mode = "off";
+  uint32_t admin_remaining_s = 0;
+  if (g_admin.active) {
+    admin_mode = "authenticated";
+    admin_remaining_s = g_admin.remaining_s();
+  } else if (eligible) {
+    admin_mode = "eligible";
+    admin_remaining_s = eligible_remaining_s;
+  }
   doc["active"] = g_admin.active;
-  doc["remaining_s"] = g_admin.remaining_s();
+  doc["remaining_s"] = admin_remaining_s;
+  doc["mode"] = admin_mode;
   send_json(200, doc);
 }
 
@@ -241,6 +267,14 @@ static void handle_admin_login() {
   String password = body["password"] | String("");
   if (!g_cfg->admin_password_set()) {
     server.send(409, "application/json", "{\"error\":\"admin_password_not_set\"}");
+    return;
+  }
+  if (wss_nfc_admin_gate_required() && !wss_nfc_admin_eligible_active()) {
+    StaticJsonDocument<96> extra;
+    extra["reason"] = "nfc_required";
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_warn("ui", "admin_login_blocked", "admin login blocked: nfc required", &o);
+    server.send(403, "application/json", "{\"error\":\"admin_nfc_required\"}");
     return;
   }
 
@@ -273,6 +307,11 @@ static void handle_admin_logout() {
   if (g_admin.expired()) g_admin.clear();
   g_admin.clear();
   if (g_log) g_log->log_info("ui", "admin_mode_exited", "admin mode exited");
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handle_admin_eligible_clear() {
+  wss_nfc_admin_eligible_clear("api_clear");
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -626,6 +665,7 @@ void wss_web_begin(WssConfigStore& cfg, WssEventLogger& log) {
   server.on("/api/admin/status", HTTP_GET, handle_admin_status);
   server.on("/api/admin/login", HTTP_POST, handle_admin_login);
   server.on("/api/admin/logout", HTTP_POST, handle_admin_logout);
+  server.on("/api/admin/eligible/clear", HTTP_POST, handle_admin_eligible_clear);
 
   // M2: time setting (RTC adjust) – gated after setup.
   server.on("/api/time/set", HTTP_POST, handle_time_set);
