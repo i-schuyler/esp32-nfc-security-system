@@ -475,6 +475,114 @@ static void enforce_retention_if_due() {
 }
 #endif
 
+#if WSS_FEATURE_SD
+static bool parse_log_date_key(const String& name, String& out_key) {
+  if (!name.startsWith("events_") || !name.endsWith(".txt")) return false;
+  if (name.length() < 21) return false; // events_YYYY-MM-DD.txt
+  String key = name.substring(7, 17);
+  if (key.length() != 10) return false;
+  if (key[4] != '-' || key[7] != '-') return false;
+  for (size_t i = 0; i < key.length(); i++) {
+    if (i == 4 || i == 7) continue;
+    if (key[i] < '0' || key[i] > '9') return false;
+  }
+  out_key = key;
+  return true;
+}
+
+static void compute_range_keys(WssLogRange range, String& start_key, String& end_key) {
+  start_key = "";
+  end_key = "";
+  if (range == WSS_LOG_RANGE_ALL) return;
+  time_t now = time(nullptr);
+  time_t start = now;
+  if (range == WSS_LOG_RANGE_7D) {
+    start = now - (time_t)6 * 86400;
+  }
+  start_key = date_key_utc(start);
+  end_key = date_key_utc(now);
+}
+
+static bool log_in_range(const String& date_key, const String& start_key,
+                         const String& end_key, WssLogRange range) {
+  if (range == WSS_LOG_RANGE_ALL) return true;
+  if (!start_key.length() || !end_key.length()) return false;
+  return date_key >= start_key && date_key <= end_key;
+}
+
+static bool for_each_log_file(WssLogRange range,
+                              bool (*cb)(const String& path, uint64_t size_bytes, void* ctx),
+                              void* ctx, String& err) {
+  if (!g_status.sd_mounted) {
+    err = "sd_not_mounted";
+    return false;
+  }
+  if (!g_sd.exists("/logs")) return true;
+  FsFile logs = g_sd.open("/logs", O_RDONLY);
+  if (!logs) {
+    err = "logs_dir_open_failed";
+    return false;
+  }
+
+  String start_key;
+  String end_key;
+  compute_range_keys(range, start_key, end_key);
+
+  FsFile year_dir;
+  while (year_dir.openNext(&logs, O_RDONLY)) {
+    if (!year_dir.isDir()) {
+      year_dir.close();
+      continue;
+    }
+    char yname[16] = {0};
+    year_dir.getName(yname, sizeof(yname));
+    String y = String(yname);
+
+    FsFile month_dir;
+    while (month_dir.openNext(&year_dir, O_RDONLY)) {
+      if (!month_dir.isDir()) {
+        month_dir.close();
+        continue;
+      }
+      char mname[16] = {0};
+      month_dir.getName(mname, sizeof(mname));
+      String m = String(mname);
+
+      FsFile file;
+      while (file.openNext(&month_dir, O_RDONLY)) {
+        if (file.isDir()) {
+          file.close();
+          continue;
+        }
+        char fname[48] = {0};
+        file.getName(fname, sizeof(fname));
+        String n = String(fname);
+        String date_key;
+        if (!parse_log_date_key(n, date_key)) {
+          file.close();
+          continue;
+        }
+        if (!log_in_range(date_key, start_key, end_key, range)) {
+          file.close();
+          continue;
+        }
+        String path = String("/logs/") + y + String("/") + m + String("/") + n;
+        uint64_t size_bytes = file.fileSize();
+        file.close();
+        if (cb && !cb(path, size_bytes, ctx)) {
+          logs.close();
+          return false;
+        }
+      }
+      month_dir.close();
+    }
+    year_dir.close();
+  }
+  logs.close();
+  return true;
+}
+#endif
+
 void wss_storage_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_cfg = cfg;
   g_log = log;
@@ -654,4 +762,130 @@ bool wss_storage_append_line(const String& line) {
 
 size_t wss_storage_read_fallback(String* out, size_t max_items) {
   return g_fallback.read_recent(out, max_items);
+}
+
+bool wss_storage_list_log_files(WssLogFileInfo* out, size_t max_items, size_t& out_count,
+                                bool& out_truncated, String& err) {
+  out_count = 0;
+  out_truncated = false;
+  err = "";
+#if !WSS_FEATURE_SD
+  err = "sd_disabled";
+  return false;
+#else
+  if (!g_status.sd_mounted) {
+    err = "sd_not_mounted";
+    return false;
+  }
+  struct ListCtx {
+    WssLogFileInfo* out;
+    size_t max_items;
+    size_t count;
+    bool truncated;
+  };
+  ListCtx ctx{out, max_items, 0, false};
+  auto cb = [](const String& path, uint64_t size_bytes, void* ptr) -> bool {
+    ListCtx* c = static_cast<ListCtx*>(ptr);
+    if (c->count < c->max_items) {
+      c->out[c->count].name = path;
+      c->out[c->count].size_bytes = size_bytes;
+      c->count++;
+    } else {
+      c->truncated = true;
+    }
+    return true;
+  };
+  bool ok = for_each_log_file(WSS_LOG_RANGE_ALL, cb, &ctx, err);
+  out_count = ctx.count;
+  out_truncated = ctx.truncated;
+  return ok;
+#endif
+}
+
+bool wss_storage_log_bytes(WssLogRange range, uint64_t& total_bytes, size_t& file_count,
+                           String& err) {
+  total_bytes = 0;
+  file_count = 0;
+  err = "";
+#if !WSS_FEATURE_SD
+  err = "sd_disabled";
+  return false;
+#else
+  if (!g_status.sd_mounted) {
+    err = "sd_not_mounted";
+    return false;
+  }
+  struct SizeCtx {
+    uint64_t total_bytes;
+    size_t file_count;
+  };
+  SizeCtx size_ctx{0, 0};
+  auto size_cb = [](const String& path, uint64_t size_bytes, void* ptr) -> bool {
+    (void)path;
+    SizeCtx* c = static_cast<SizeCtx*>(ptr);
+    c->total_bytes += size_bytes;
+    c->file_count++;
+    return true;
+  };
+  bool ok = for_each_log_file(range, size_cb, &size_ctx, err);
+  if (!ok) return false;
+  total_bytes = size_ctx.total_bytes;
+  file_count = size_ctx.file_count;
+  return true;
+#endif
+}
+
+bool wss_storage_stream_logs(WssLogRange range, Stream& out, uint32_t max_bytes,
+                             size_t& bytes_sent, String& err) {
+  bytes_sent = 0;
+  err = "";
+#if !WSS_FEATURE_SD
+  err = "sd_disabled";
+  return false;
+#else
+  uint64_t total_bytes = 0;
+  size_t file_count = 0;
+  if (!wss_storage_log_bytes(range, total_bytes, file_count, err)) return false;
+  if (total_bytes > max_bytes) {
+    err = "too_large";
+    return false;
+  }
+
+  struct StreamCtx {
+    Stream* out;
+    size_t bytes_sent;
+    String err;
+  };
+  StreamCtx stream_ctx{&out, 0, ""};
+  auto stream_cb = [](const String& path, uint64_t size_bytes, void* ptr) -> bool {
+    (void)size_bytes;
+    StreamCtx* c = static_cast<StreamCtx*>(ptr);
+    FsFile f = g_sd.open(path.c_str(), O_RDONLY);
+    if (!f) {
+      c->err = "log_open_failed";
+      return false;
+    }
+    uint8_t buf[1024];
+    while (f.available()) {
+      int32_t got = f.read(buf, sizeof(buf));
+      if (got <= 0) break;
+      size_t wrote = c->out->write(buf, (size_t)got);
+      c->bytes_sent += wrote;
+      if (wrote != (size_t)got) {
+        c->err = "log_stream_failed";
+        f.close();
+        return false;
+      }
+    }
+    f.close();
+    return true;
+  };
+  bool ok = for_each_log_file(range, stream_cb, &stream_ctx, err);
+  if (!ok) {
+    if (stream_ctx.err.length()) err = stream_ctx.err;
+    return false;
+  }
+  bytes_sent = stream_ctx.bytes_sent;
+  return true;
+#endif
 }

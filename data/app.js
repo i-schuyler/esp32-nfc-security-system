@@ -226,6 +226,40 @@
     }
   }
 
+  async function downloadLogs(range) {
+    setText('logsError', '');
+    const r = await fetch(`/api/logs/download?range=${encodeURIComponent(range)}`, {
+      headers: hdrs(),
+    });
+    if (r.status === 409) {
+      let msg = 'Too large to download. Choose a shorter range.';
+      try {
+        const j = await r.json();
+        if (j && j.message) msg = j.message;
+      } catch (e) {}
+      setText('logsError', msg);
+      return;
+    }
+    if (!r.ok) {
+      if (r.status === 403) {
+        setText('logsError', 'Admin mode required.');
+      } else {
+        setText('logsError', `Error: ${r.status}`);
+      }
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `logs_${range}_${stamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   $('wizStep').addEventListener('change', () => {
     renderWizardFields($('wizStep').value);
     setText('wizError', '');
@@ -335,6 +369,16 @@
     const r = await jpost('/api/control/silence', {});
     if (!r.ok) setText('controlsError', `Error: ${(r.json && r.json.stub) ? 'stub' : r.status}`);
     await refreshEvents();
+  });
+
+  $('btnLogsToday').addEventListener('click', async () => {
+    await downloadLogs('today');
+  });
+  $('btnLogs7d').addEventListener('click', async () => {
+    await downloadLogs('7d');
+  });
+  $('btnLogsAll').addEventListener('click', async () => {
+    await downloadLogs('all');
   });
 
   $('btnWizardRestart').addEventListener('click', async () => {

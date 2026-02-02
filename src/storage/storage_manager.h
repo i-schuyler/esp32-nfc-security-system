@@ -33,6 +33,17 @@ struct WssStorageStatus {
   String active_log_path; // when sd backend
 };
 
+struct WssLogFileInfo {
+  String name;
+  uint64_t size_bytes = 0;
+};
+
+enum WssLogRange {
+  WSS_LOG_RANGE_TODAY = 0,
+  WSS_LOG_RANGE_7D,
+  WSS_LOG_RANGE_ALL,
+};
+
 void wss_storage_begin(WssConfigStore* cfg, WssEventLogger* log);
 void wss_storage_loop();
 WssStorageStatus wss_storage_status();
@@ -42,6 +53,19 @@ bool wss_storage_append_line(const String& line);
 
 // Export most-recent flash ring items (newest-last). Returns number written.
 size_t wss_storage_read_fallback(String* out, size_t max_items);
+
+// List available SD log files (stable identifiers + sizes). Returns false on error.
+bool wss_storage_list_log_files(WssLogFileInfo* out, size_t max_items, size_t& out_count,
+                                bool& out_truncated, String& err);
+
+// Sum SD log bytes for a range (used to enforce download limits).
+bool wss_storage_log_bytes(WssLogRange range, uint64_t& total_bytes, size_t& file_count,
+                           String& err);
+
+// Stream SD log files for the requested range to an output stream with a byte limit.
+// Returns false with err="too_large" if size exceeds max_bytes.
+bool wss_storage_stream_logs(WssLogRange range, Stream& out, uint32_t max_bytes,
+                             size_t& bytes_sent, String& err);
 
 // NFC allowlist persistence (SD preferred; returns false if SD unavailable).
 bool wss_storage_write_allowlist(const String& payload, String& err);

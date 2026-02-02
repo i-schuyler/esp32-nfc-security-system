@@ -33,6 +33,9 @@
 static WebServer server(80);
 static WssConfigStore* g_cfg = nullptr;
 static WssEventLogger* g_log = nullptr;
+static const uint32_t kLogDownloadMaxBytes = 512 * 1024;
+static const size_t kMaxLogListItems = 128;
+static const size_t kMaxFallbackItems = 64;
 
 struct AdminSession {
   bool active = false;
@@ -228,6 +231,178 @@ static void handle_events() {
   DynamicJsonDocument out(8192);
   if (g_log) g_log->recent_events(out, limit);
   send_json(200, out);
+}
+
+static bool parse_log_range(const String& range, WssLogRange& out) {
+  if (range == "today") {
+    out = WSS_LOG_RANGE_TODAY;
+    return true;
+  }
+  if (range == "7d") {
+    out = WSS_LOG_RANGE_7D;
+    return true;
+  }
+  if (range == "all") {
+    out = WSS_LOG_RANGE_ALL;
+    return true;
+  }
+  return false;
+}
+
+static void log_logs_event(const char* severity, const char* event_type, const char* msg,
+                           const char* range, uint64_t bytes, size_t file_count,
+                           const char* reason) {
+  if (!g_log) return;
+  StaticJsonDocument<192> extra;
+  if (range && range[0]) extra["range"] = range;
+  if (bytes) extra["bytes"] = bytes;
+  if (file_count) extra["file_count"] = (uint32_t)file_count;
+  if (reason && reason[0]) extra["reason"] = reason;
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  if (severity && strcmp(severity, "warn") == 0) {
+    g_log->log_warn("ui", event_type, msg, &o);
+  } else if (severity && strcmp(severity, "error") == 0) {
+    g_log->log_error("ui", event_type, msg, &o);
+  } else {
+    g_log->log_info("ui", event_type, msg, &o);
+  }
+}
+
+static void handle_logs_list() {
+  if (!admin_required("logs_list")) return;
+  WssStorageStatus sstat = wss_storage_status();
+  if (!sstat.sd_mounted) {
+    StaticJsonDocument<128> doc;
+    doc["sd_missing"] = true;
+    doc["flash_snapshot"] = true;
+    send_json(200, doc);
+    log_logs_event("info", "logs_list", "logs list requested (flash snapshot only)",
+      "", 0, 0, "sd_missing");
+    return;
+  }
+
+  WssLogFileInfo items[kMaxLogListItems];
+  size_t count = 0;
+  bool truncated = false;
+  String err;
+  if (!wss_storage_list_log_files(items, kMaxLogListItems, count, truncated, err)) {
+    server.send(500, "application/json", "{\"error\":\"log_list_failed\"}");
+    log_logs_event("error", "logs_list_failed", "logs list failed", "", 0, 0, err.c_str());
+    return;
+  }
+
+  DynamicJsonDocument doc(16384);
+  doc["sd_missing"] = false;
+  doc["truncated"] = truncated;
+  JsonArray files = doc.createNestedArray("files");
+  for (size_t i = 0; i < count; i++) {
+    JsonObject f = files.createNestedObject();
+    f["name"] = items[i].name;
+    f["size_bytes"] = (uint64_t)items[i].size_bytes;
+  }
+  send_json(200, doc);
+  log_logs_event("info", "logs_list", "logs list requested", "",
+    0, count, truncated ? "truncated" : "");
+}
+
+static const char* kFlashFallbackHeader =
+  "# FLASH_FALLBACK_LOG_SNAPSHOT (most recent entries)\n";
+
+static bool build_flash_fallback_snapshot(String* lines, size_t max_items, size_t& count,
+                                          size_t& total_bytes, String& err) {
+  err = "";
+  count = wss_storage_read_fallback(lines, max_items);
+  total_bytes = strlen(kFlashFallbackHeader);
+  for (size_t i = 0; i < count; i++) {
+    total_bytes += lines[i].length() + 1;
+  }
+  if (total_bytes > kLogDownloadMaxBytes) {
+    err = "too_large";
+    return false;
+  }
+  return true;
+}
+
+static void write_flash_fallback_snapshot(const String* lines, size_t count, size_t& bytes_sent) {
+  bytes_sent = 0;
+  WiFiClient client = server.client();
+  client.write(reinterpret_cast<const uint8_t*>(kFlashFallbackHeader),
+    strlen(kFlashFallbackHeader));
+  bytes_sent += strlen(kFlashFallbackHeader);
+  for (size_t i = 0; i < count; i++) {
+    client.write(reinterpret_cast<const uint8_t*>(lines[i].c_str()), lines[i].length());
+    client.write(reinterpret_cast<const uint8_t*>("\n"), 1);
+    bytes_sent += lines[i].length() + 1;
+  }
+}
+
+static void handle_logs_download() {
+  if (!admin_required("logs_download")) return;
+  String range_str = server.hasArg("range") ? server.arg("range") : String("");
+  WssLogRange range = WSS_LOG_RANGE_TODAY;
+  if (!parse_log_range(range_str, range)) {
+    server.send(400, "application/json", "{\"error\":\"bad_range\"}");
+    log_logs_event("warn", "logs_download_failed", "logs download failed: bad range",
+      range_str.c_str(), 0, 0, "bad_range");
+    return;
+  }
+  log_logs_event("info", "logs_download_start", "logs download started",
+    range_str.c_str(), 0, 0, "");
+
+  uint64_t total_bytes = 0;
+  size_t file_count = 0;
+  String err;
+  WssStorageStatus sstat = wss_storage_status();
+  String fallback_lines[kMaxFallbackItems];
+  size_t fallback_count = 0;
+  size_t fallback_total = 0;
+  if (sstat.sd_mounted) {
+    if (!wss_storage_log_bytes(range, total_bytes, file_count, err)) {
+      server.send(500, "application/json", "{\"error\":\"log_download_failed\"}");
+      log_logs_event("error", "logs_download_failed", "logs download failed",
+        range_str.c_str(), 0, 0, err.c_str());
+      return;
+    }
+    if (total_bytes > kLogDownloadMaxBytes) {
+      server.send(409, "application/json",
+        "{\"error\":\"too_large\",\"message\":\"Too large to download. Choose a shorter range.\"}");
+      log_logs_event("warn", "logs_download_refused", "logs download refused: too large",
+        range_str.c_str(), total_bytes, file_count, "too_large");
+      return;
+    }
+  } else {
+    if (!build_flash_fallback_snapshot(fallback_lines, kMaxFallbackItems,
+          fallback_count, fallback_total, err)) {
+      server.send(409, "application/json",
+        "{\"error\":\"too_large\",\"message\":\"Too large to download. Choose a shorter range.\"}");
+      log_logs_event("warn", "logs_download_refused", "logs download refused: too large",
+        range_str.c_str(), 0, 0, "too_large");
+      return;
+    }
+  }
+
+  server.sendHeader("Cache-Control", "no-store");
+  server.sendHeader("Content-Disposition",
+    String("attachment; filename=\"logs_") + range_str + String(".txt\""));
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/plain", "");
+
+  size_t bytes_sent = 0;
+  if (!sstat.sd_mounted) {
+    write_flash_fallback_snapshot(fallback_lines, fallback_count, bytes_sent);
+    log_logs_event("info", "logs_download_ok", "logs download complete (flash fallback)",
+      range_str.c_str(), bytes_sent, 0, "flash_fallback");
+    return;
+  }
+
+  auto client = server.client();
+  if (!wss_storage_stream_logs(range, client, kLogDownloadMaxBytes, bytes_sent, err)) {
+    log_logs_event("error", "logs_download_failed", "logs download failed",
+      range_str.c_str(), 0, 0, err.c_str());
+    return;
+  }
+  log_logs_event("info", "logs_download_ok", "logs download complete",
+    range_str.c_str(), bytes_sent, file_count, "");
 }
 
 static void handle_admin_status() {
@@ -660,6 +835,8 @@ void wss_web_begin(WssConfigStore& cfg, WssEventLogger& log) {
 
   server.on("/api/status", HTTP_GET, handle_status);
   server.on("/api/events", HTTP_GET, handle_events);
+  server.on("/api/logs/list", HTTP_GET, handle_logs_list);
+  server.on("/api/logs/download", HTTP_GET, handle_logs_download);
 
   // Admin session
   server.on("/api/admin/status", HTTP_GET, handle_admin_status);
