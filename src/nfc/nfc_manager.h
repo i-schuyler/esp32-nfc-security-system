@@ -33,6 +33,8 @@ struct WssNfcStatus {
   bool provisioning_active = false;
   String provisioning_mode; // add_user|add_admin|remove|none
   uint32_t provisioning_remaining_s = 0;
+  bool admin_eligible_active = false;
+  uint32_t admin_eligible_remaining_s = 0;
   String last_writeback_result; // ok|fail|truncated
   String last_writeback_reason;
   String last_writeback_ts;     // ISO-8601 or "u"
@@ -51,3 +53,7 @@ bool wss_nfc_provision_set_mode(const char* mode);
 void wss_nfc_provision_stop(const char* reason);
 WssNfcStatus wss_nfc_status();
 void wss_nfc_write_status_json(JsonObject out);
+bool wss_nfc_admin_gate_required();
+bool wss_nfc_admin_eligible_active();
+uint32_t wss_nfc_admin_eligible_remaining_s();
+void wss_nfc_admin_eligible_clear(const char* reason);

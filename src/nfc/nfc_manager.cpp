@@ -42,6 +42,9 @@ static bool g_prov_active = false;
 static uint32_t g_prov_until_ms = 0;
 static String g_prov_mode = "none";
 static const uint32_t kProvisionTimeoutS = 60;
+static const uint32_t kAdminEligibleWindowS = 120;
+static bool g_admin_eligible_active = false;
+static uint32_t g_admin_eligible_until_ms = 0;
 static WssNfcReaderPn532 g_reader;
 static bool g_reader_ok = false;
 static WssNfcTagInfo g_last_tag;
@@ -325,6 +328,54 @@ static void prov_tick(uint32_t now_ms) {
     g_prov_active = false;
     g_prov_mode = "none";
     if (g_log) g_log->log_info("nfc", "provision_timeout", "nfc provisioning timeout");
+  }
+}
+
+static void admin_eligible_clear_internal(const char* source, const char* reason) {
+  if (!g_admin_eligible_active) return;
+  g_admin_eligible_active = false;
+  g_admin_eligible_until_ms = 0;
+  if (g_log) {
+    StaticJsonDocument<128> extra;
+    if (reason && reason[0]) extra["reason"] = reason;
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_info(source ? source : "nfc", "admin_eligible_cleared", "admin eligible window cleared", &o);
+  }
+}
+
+static bool admin_eligible_active(uint32_t now_ms) {
+  if (!g_admin_eligible_active) return false;
+  if ((int32_t)(now_ms - g_admin_eligible_until_ms) >= 0) {
+    g_admin_eligible_active = false;
+    g_admin_eligible_until_ms = 0;
+    if (g_log) {
+      StaticJsonDocument<128> extra;
+      extra["reason"] = "timeout";
+      extra["window_s"] = kAdminEligibleWindowS;
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      g_log->log_info("nfc", "admin_eligible_expired", "admin eligible window expired", &o);
+    }
+    return false;
+  }
+  return true;
+}
+
+static uint32_t admin_eligible_remaining_s(uint32_t now_ms) {
+  if (!g_admin_eligible_active) return 0;
+  if ((int32_t)(g_admin_eligible_until_ms - now_ms) <= 0) return 0;
+  return (g_admin_eligible_until_ms - now_ms) / 1000UL;
+}
+
+static void admin_eligible_set(uint32_t now_ms, const char* reason) {
+  bool was_active = admin_eligible_active(now_ms);
+  g_admin_eligible_active = true;
+  g_admin_eligible_until_ms = now_ms + kAdminEligibleWindowS * 1000UL;
+  if (!was_active && g_log) {
+    StaticJsonDocument<128> extra;
+    extra["window_s"] = kAdminEligibleWindowS;
+    if (reason && reason[0]) extra["reason"] = reason;
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_info("nfc", "admin_eligible_entered", "admin eligible window opened", &o);
   }
 }
 
@@ -654,6 +705,8 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_prov_active = false;
   g_prov_until_ms = 0;
   g_prov_mode = "none";
+  g_admin_eligible_active = false;
+  g_admin_eligible_until_ms = 0;
   g_reader_ok = false;
   g_last_tag = WssNfcTagInfo{};
   g_last_tag_seen_ms = 0;
@@ -704,6 +757,7 @@ void wss_nfc_loop() {
     if (g_last_enabled_cfg) {
       g_status.scan_ok_count = 0;
       g_status.scan_fail_count = 0;
+      admin_eligible_clear_internal("nfc", "nfc_disabled_cfg");
     }
     g_last_enabled_cfg = false;
     g_reader_ok = false;
@@ -737,6 +791,7 @@ void wss_nfc_loop() {
   lockout_update(now_ms);
   hold_tick(now_ms);
   prov_tick(now_ms);
+  admin_eligible_active(now_ms);
 
   static const uint32_t kPollIntervalMs = 150;
   if ((uint32_t)(now_ms - g_last_poll_ms) < kPollIntervalMs) return;
@@ -803,6 +858,10 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
       }
       return;
     }
+  }
+
+  if (role == WSS_NFC_ROLE_ADMIN) {
+    admin_eligible_set(now_ms, "admin_scan");
   }
 
   if (g_prov_active) {
@@ -960,6 +1019,9 @@ WssNfcStatus wss_nfc_status() {
   } else {
     g_status.provisioning_remaining_s = 0;
   }
+  bool eligible = admin_eligible_active(now_ms);
+  g_status.admin_eligible_active = eligible;
+  g_status.admin_eligible_remaining_s = eligible ? admin_eligible_remaining_s(now_ms) : 0;
   g_status.driver_active = g_reader_ok;
   g_status.last_writeback_result = g_last_writeback_result;
   g_status.last_writeback_reason = g_last_writeback_reason;
@@ -992,7 +1054,30 @@ void wss_nfc_write_status_json(JsonObject out) {
   out["provisioning_active"] = st.provisioning_active;
   out["provisioning_mode"] = st.provisioning_mode;
   out["provisioning_remaining_s"] = st.provisioning_remaining_s;
+  out["admin_eligible_active"] = st.admin_eligible_active;
+  out["admin_eligible_remaining_s"] = st.admin_eligible_remaining_s;
   if (st.last_writeback_result.length()) out["last_writeback_result"] = st.last_writeback_result;
   if (st.last_writeback_reason.length()) out["last_writeback_reason"] = st.last_writeback_reason;
   if (st.last_writeback_ts.length()) out["last_writeback_ts"] = st.last_writeback_ts;
+}
+
+bool wss_nfc_admin_gate_required() {
+  WssNfcStatus st = wss_nfc_status();
+  if (!st.feature_enabled || !st.enabled_cfg) return false;
+  if (!st.reader_present) return false;
+  return st.health == "ok";
+}
+
+bool wss_nfc_admin_eligible_active() {
+  WssNfcStatus st = wss_nfc_status();
+  return st.admin_eligible_active;
+}
+
+uint32_t wss_nfc_admin_eligible_remaining_s() {
+  WssNfcStatus st = wss_nfc_status();
+  return st.admin_eligible_remaining_s;
+}
+
+void wss_nfc_admin_eligible_clear(const char* reason) {
+  admin_eligible_clear_internal("ui", reason ? reason : "clear");
 }
