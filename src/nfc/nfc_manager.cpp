@@ -4,6 +4,7 @@
 #include "nfc_manager.h"
 
 #include <Arduino.h>
+#include <time.h>
 
 #include "../config/config_store.h"
 #include "../logging/event_logger.h"
@@ -21,6 +22,14 @@ static bool g_last_enabled_cfg = true;
 static String g_last_taghash;
 static uint32_t g_last_tag_ms = 0;
 static uint32_t g_last_debounce_log_ms = 0;
+static bool g_lockout_active = false;
+static uint32_t g_lockout_until_ms = 0;
+static uint32_t g_lockout_until_epoch_s = 0;
+static uint32_t g_last_lockout_ignored_log_ms = 0;
+static const size_t kMaxInvalidScans = 16;
+static uint32_t g_invalid_scan_ms[kMaxInvalidScans];
+static size_t g_invalid_scan_count = 0;
+static size_t g_invalid_scan_head = 0;
 
 static bool feature_enabled() {
 #if defined(WSS_FEATURE_NFC) && WSS_FEATURE_NFC
@@ -126,6 +135,107 @@ static void log_action_event(const char* action, const char* outcome, const char
   }
 }
 
+static uint32_t cfg_u32(const char* k, uint32_t def) {
+  if (!g_cfg) return def;
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
+  if (!root.containsKey(k)) return def;
+  if (root[k].is<uint32_t>()) return root[k].as<uint32_t>();
+  if (root[k].is<int>()) return (uint32_t)root[k].as<int>();
+  return def;
+}
+
+static bool time_valid_now() {
+  time_t now = time(nullptr);
+  return (now > 1700000000);
+}
+
+static String iso8601_from_epoch(time_t epoch) {
+  struct tm tm_utc;
+  gmtime_r(&epoch, &tm_utc);
+  char buf[32];
+  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_utc);
+  return String(buf);
+}
+
+static void lockout_enter(uint32_t now_ms, uint32_t window_s, uint32_t max_scans, uint32_t duration_s) {
+  g_lockout_active = true;
+  g_lockout_until_ms = now_ms + duration_s * 1000UL;
+  if (time_valid_now()) {
+    g_lockout_until_epoch_s = (uint32_t)time(nullptr) + duration_s;
+  } else {
+    g_lockout_until_epoch_s = 0;
+  }
+  g_status.lockout_active = true;
+  g_status.lockout_remaining_s = duration_s;
+  g_status.lockout_until_ts = g_lockout_until_epoch_s ? iso8601_from_epoch(g_lockout_until_epoch_s) : String();
+  g_invalid_scan_count = 0;
+  g_invalid_scan_head = 0;
+  if (g_log) {
+    StaticJsonDocument<192> extra;
+    extra["window_s"] = window_s;
+    extra["max_scans"] = max_scans;
+    extra["duration_s"] = duration_s;
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_warn("nfc", "lockout_enter", "nfc lockout entered", &o);
+  }
+}
+
+static void lockout_exit(const char* reason) {
+  g_lockout_active = false;
+  g_lockout_until_ms = 0;
+  g_lockout_until_epoch_s = 0;
+  g_status.lockout_active = false;
+  g_status.lockout_remaining_s = 0;
+  g_status.lockout_until_ts = "";
+  g_invalid_scan_count = 0;
+  g_invalid_scan_head = 0;
+  if (g_log) {
+    StaticJsonDocument<128> extra;
+    if (reason && reason[0]) extra["reason"] = reason;
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_info("nfc", "lockout_exit", "nfc lockout exited", &o);
+  }
+}
+
+static void lockout_update(uint32_t now_ms) {
+  g_status.lockout_active = g_lockout_active;
+  if (!g_lockout_active) return;
+  if (g_lockout_until_ms != 0 && (int32_t)(g_lockout_until_ms - now_ms) > 0) {
+    uint32_t remaining_ms = g_lockout_until_ms - now_ms;
+    g_status.lockout_remaining_s = remaining_ms / 1000UL;
+    if (g_lockout_until_epoch_s && time_valid_now()) {
+      g_status.lockout_until_ts = iso8601_from_epoch(g_lockout_until_epoch_s);
+    } else {
+      g_status.lockout_until_ts = "";
+    }
+    return;
+  }
+  lockout_exit("expired");
+}
+
+static void invalid_scan_record(uint32_t now_ms, uint32_t window_s, uint32_t max_scans, uint32_t duration_s) {
+  if (max_scans == 0 || window_s == 0 || duration_s == 0) return;
+  if (max_scans > kMaxInvalidScans) max_scans = kMaxInvalidScans;
+
+  g_invalid_scan_ms[g_invalid_scan_head] = now_ms;
+  g_invalid_scan_head = (g_invalid_scan_head + 1) % kMaxInvalidScans;
+  if (g_invalid_scan_count < kMaxInvalidScans) g_invalid_scan_count++;
+
+  uint32_t window_ms = window_s * 1000UL;
+  uint32_t count = 0;
+  for (size_t i = 0; i < g_invalid_scan_count; i++) {
+    size_t idx = (g_invalid_scan_head + kMaxInvalidScans - 1 - i) % kMaxInvalidScans;
+    uint32_t t = g_invalid_scan_ms[idx];
+    if ((uint32_t)(now_ms - t) <= window_ms) {
+      count++;
+    }
+  }
+
+  if (count >= max_scans && !g_lockout_active) {
+    lockout_enter(now_ms, window_s, max_scans, duration_s);
+  }
+}
+
 static bool debounced(const String& taghash, uint32_t now_ms) {
   if (taghash.length() == 0) return false;
   static const uint32_t kDebounceMs = 1500;
@@ -158,6 +268,12 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_last_taghash = "";
   g_last_tag_ms = 0;
   g_last_debounce_log_ms = 0;
+  g_lockout_active = false;
+  g_lockout_until_ms = 0;
+  g_lockout_until_epoch_s = 0;
+  g_last_lockout_ignored_log_ms = 0;
+  g_invalid_scan_count = 0;
+  g_invalid_scan_head = 0;
 
   if (!g_status.feature_enabled) {
     set_health_disabled_build();
@@ -206,6 +322,7 @@ void wss_nfc_loop() {
 
   // Slice 0: no reader driver yet. Keep status non-blocking.
   set_health_unavailable();
+  lockout_update(millis());
 
   uint32_t now_ms = millis();
   static const uint32_t kPollIntervalMs = 150;
@@ -231,16 +348,43 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
     log_action_event("tap", "rejected", "uid_invalid", "unknown", "");
     return;
   }
+  uint32_t now_ms = millis();
+  lockout_update(now_ms);
+
   String taghash = wss_nfc_taghash(uid, uid_len);
   WssNfcRole role = wss_nfc_allowlist_get_role(taghash);
   const char* role_str = wss_nfc_role_to_string(role);
   const char* reason = (role == WSS_NFC_ROLE_UNKNOWN) ? "allowlist_unknown" : "allowlist_match";
   log_scan_ok(role_str, reason, taghash);
 
-  uint32_t now_ms = millis();
+  uint32_t window_s = cfg_u32("invalid_scan_window_s", 30);
+  uint32_t max_scans = cfg_u32("invalid_scan_max", 5);
+  uint32_t duration_s = cfg_u32("lockout_duration_s", 60);
+
+  if (g_lockout_active) {
+    if (role == WSS_NFC_ROLE_ADMIN) {
+      lockout_exit("admin_clear");
+      if (g_log) {
+        StaticJsonDocument<128> extra;
+        extra["cleared_by"] = "admin";
+        if (taghash.length()) extra["tag_prefix"] = taghash.substring(0, 8);
+        JsonObjectConst o = extra.as<JsonObjectConst>();
+        g_log->log_info("nfc", "lockout_cleared", "nfc lockout cleared by admin", &o);
+      }
+    } else {
+      if ((uint32_t)(now_ms - g_last_lockout_ignored_log_ms) >= 2000) {
+        g_last_lockout_ignored_log_ms = now_ms;
+        log_action_event("tap", "ignored", "ignored_due_to_lockout", role_str, taghash);
+      }
+      return;
+    }
+  }
+
   if (debounced(taghash, now_ms)) return;
 
   if (role == WSS_NFC_ROLE_UNKNOWN) {
+    invalid_scan_record(now_ms, window_s, max_scans, duration_s);
+    if (g_lockout_active) return;
     log_action_event("tap", "rejected", "not_in_allowlist", role_str, taghash);
     return;
   }
@@ -282,6 +426,7 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
 }
 
 WssNfcStatus wss_nfc_status() {
+  lockout_update(millis());
   return g_status;
 }
 
@@ -295,6 +440,9 @@ void wss_nfc_write_status_json(JsonObject out) {
   out["last_role"] = st.last_role;
   out["last_scan_result"] = st.last_scan_result;
   if (st.last_scan_reason.length()) out["last_scan_reason"] = st.last_scan_reason;
+  out["lockout_active"] = st.lockout_active;
+  out["lockout_remaining_s"] = st.lockout_remaining_s;
+  if (st.lockout_until_ts.length()) out["lockout_until_ts"] = st.lockout_until_ts;
   out["last_scan_ms"] = st.last_scan_ms;
   out["last_scan_ok_ms"] = st.last_scan_ok_ms;
   out["last_scan_fail_ms"] = st.last_scan_fail_ms;

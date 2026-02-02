@@ -23,6 +23,9 @@ struct WssNfcStatus {
   String last_role;               // admin|user|unknown
   String last_scan_result;        // ok|fail
   String last_scan_reason;        // allowlist_match|allowlist_unknown|reader_unavailable|uid_invalid
+  bool lockout_active = false;
+  uint32_t lockout_remaining_s = 0;
+  String lockout_until_ts;
   uint32_t last_scan_ms = 0;
   uint32_t last_scan_ok_ms = 0;
   uint32_t last_scan_fail_ms = 0;
