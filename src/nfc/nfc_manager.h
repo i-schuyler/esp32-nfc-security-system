@@ -20,6 +20,7 @@ struct WssNfcStatus {
   bool reader_present = false;    // best-effort (true only if reader init succeeds)
   String health;                  // ok|disabled_cfg|disabled_build|unavailable
   String driver;                  // stub|none (driver name later)
+  bool driver_active = false;
   String last_role;               // admin|user|unknown
   String last_scan_result;        // ok|fail
   String last_scan_reason;        // allowlist_match|allowlist_unknown|reader_unavailable|uid_invalid
@@ -32,6 +33,9 @@ struct WssNfcStatus {
   bool provisioning_active = false;
   String provisioning_mode; // add_user|add_admin|remove|none
   uint32_t provisioning_remaining_s = 0;
+  String last_writeback_result; // ok|fail|truncated
+  String last_writeback_reason;
+  String last_writeback_ts;     // ISO-8601 or "u"
   uint32_t last_scan_ms = 0;
   uint32_t last_scan_ok_ms = 0;
   uint32_t last_scan_fail_ms = 0;

@@ -10,6 +10,8 @@
 #include "../logging/event_logger.h"
 #include "nfc_allowlist.h"
 #include "../state_machine/state_machine.h"
+#include "../storage/time_manager.h"
+#include "nfc_reader_pn532.h"
 
 namespace {
 
@@ -40,6 +42,13 @@ static bool g_prov_active = false;
 static uint32_t g_prov_until_ms = 0;
 static String g_prov_mode = "none";
 static const uint32_t kProvisionTimeoutS = 60;
+static WssNfcReaderPn532 g_reader;
+static bool g_reader_ok = false;
+static WssNfcTagInfo g_last_tag;
+static uint32_t g_last_tag_seen_ms = 0;
+static String g_last_writeback_result;
+static String g_last_writeback_reason;
+static String g_last_writeback_ts;
 
 static bool feature_enabled() {
 #if defined(WSS_FEATURE_NFC) && WSS_FEATURE_NFC
@@ -166,6 +175,19 @@ static void log_prov_event(const char* action, const char* outcome, const char* 
   if (taghash.length()) extra["tag_prefix"] = taghash.substring(0, 8);
   JsonObjectConst o = extra.as<JsonObjectConst>();
   g_log->log_info("nfc", "nfc_provision", "nfc provisioning event", &o);
+}
+
+static void log_writeback_event(const char* result, const char* reason, const char* variant,
+                                uint32_t bytes_written, const String& taghash) {
+  if (!g_log) return;
+  StaticJsonDocument<256> extra;
+  if (result && result[0]) extra["result"] = result;
+  if (reason && reason[0]) extra["reason"] = reason;
+  if (variant && variant[0]) extra["payload_variant"] = variant;
+  if (bytes_written) extra["bytes_written"] = bytes_written;
+  if (taghash.length()) extra["tag_prefix"] = taghash.substring(0, 8);
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  g_log->log_info("nfc", "nfc_writeback", "nfc writeback", &o);
 }
 
 static uint32_t cfg_u32(const char* k, uint32_t def) {
@@ -306,6 +328,262 @@ static void prov_tick(uint32_t now_ms) {
   }
 }
 
+static String device_suffix() {
+  if (!g_cfg) return String("");
+  return g_cfg->device_suffix();
+}
+
+static String nfc_url_value() {
+  if (!g_cfg) return String("");
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
+  return String(root["nfc_url"] | String(""));
+}
+
+static bool nfc_url_enabled() {
+  if (!g_cfg) return false;
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
+  return root["nfc_url_record_enabled"] | false;
+}
+
+static String source_from_reason(const String& reason) {
+  if (reason.startsWith("sensor:")) {
+    int first = reason.indexOf(':');
+    int second = reason.indexOf(':', first + 1);
+    if (second > first) {
+      String src = reason.substring(first + 1, second);
+      src.toLowerCase();
+      if (src == "motion" || src == "door" || src == "tamper") return src;
+    }
+  }
+  return String("power");
+}
+
+static const char* source_short_code(const String& src) {
+  if (src == "motion") return "m";
+  if (src == "door") return "d";
+  if (src == "tamper") return "t";
+  return "p";
+}
+
+static String build_incident_payload_full(const WssStateStatus& sm, const String& clear_ts, bool time_valid) {
+  String trigger_ts = sm.last_transition.ts.length() ? sm.last_transition.ts : String("u");
+  if (!sm.last_transition.time_valid) trigger_ts = "u";
+  String source = source_from_reason(sm.last_transition.reason);
+  String device = String("esp32-") + device_suffix();
+  String out;
+  out.reserve(180);
+  out += "{\"v\":1,\"type\":\"incident\",\"trigger_ts\":\"";
+  out += trigger_ts;
+  out += "\",\"clear_ts\":\"";
+  out += (time_valid ? clear_ts : String("u"));
+  out += "\",\"source\":\"";
+  out += source;
+  out += "\",\"cleared_by\":\"admin\",\"device\":\"";
+  out += device;
+  out += "\"}";
+  return out;
+}
+
+static String build_incident_payload_min(const WssStateStatus& sm, const String& clear_ts, bool time_valid) {
+  String trigger_ts = sm.last_transition.ts.length() ? sm.last_transition.ts : String("u");
+  if (!sm.last_transition.time_valid) trigger_ts = "u";
+  String src = source_from_reason(sm.last_transition.reason);
+  String out;
+  out.reserve(96);
+  out += "{\"v\":1,\"t\":\"i\",\"tt\":\"";
+  out += trigger_ts;
+  out += "\",\"ct\":\"";
+  out += (time_valid ? clear_ts : String("u"));
+  out += "\",\"src\":\"";
+  out += source_short_code(src);
+  out += "\",\"cb\":\"a\",\"d\":\"";
+  out += device_suffix();
+  out += "\"}";
+  return out;
+}
+
+static String build_incident_payload_ultra(const WssStateStatus& sm) {
+  String src = source_from_reason(sm.last_transition.reason);
+  String out;
+  out.reserve(48);
+  out += "{\"v\":1,\"t\":\"i\",\"src\":\"";
+  out += source_short_code(src);
+  out += "\",\"cb\":\"a\",\"d\":\"";
+  out += device_suffix();
+  out += "\"}";
+  return out;
+}
+
+static bool append_ndef_record(String& out, bool mb, bool me, uint8_t tnf,
+                               const String& type, const String& payload) {
+  if (payload.length() > 255 || type.length() > 255) return false;
+  uint8_t header = 0;
+  if (mb) header |= 0x80;
+  if (me) header |= 0x40;
+  header |= 0x10; // SR
+  header |= (tnf & 0x07);
+  out += (char)header;
+  out += (char)type.length();
+  out += (char)payload.length();
+  out += type;
+  out += payload;
+  return true;
+}
+
+static bool build_ndef_message(const String& payload, bool include_url, const String& url, String& out) {
+  out = "";
+  String records;
+  records.reserve(payload.length() + 64);
+  bool has_url = include_url && url.length();
+  if (has_url) {
+    String url_payload;
+    url_payload.reserve(url.length() + 1);
+    url_payload += (char)0x00; // no URI prefix compression
+    url_payload += url;
+    if (!append_ndef_record(records, true, false, 0x01, "U", url_payload)) return false;
+    if (!append_ndef_record(records, false, true, 0x04, "esp32-nfc-security-system:v1", payload)) return false;
+  } else {
+    if (!append_ndef_record(records, true, true, 0x04, "esp32-nfc-security-system:v1", payload)) return false;
+  }
+
+  size_t len = records.length();
+  out.reserve(len + 8);
+  out += (char)0x03;
+  if (len < 0xFF) {
+    out += (char)len;
+  } else {
+    out += (char)0xFF;
+    out += (char)((len >> 8) & 0xFF);
+    out += (char)(len & 0xFF);
+  }
+  out += records;
+  out += (char)0xFE;
+  return true;
+}
+
+static bool ndef_fits(const String& ndef, uint32_t capacity) {
+  return (ndef.length() <= capacity);
+}
+
+static bool attempt_incident_writeback(const String& taghash, String& reason_out) {
+  reason_out = "";
+  if (!g_reader_ok) {
+    reason_out = "reader_unavailable";
+    g_last_writeback_result = "fail";
+    g_last_writeback_reason = reason_out;
+    bool tv = false;
+    g_last_writeback_ts = wss_time_now_iso8601_utc(tv);
+    if (!tv) g_last_writeback_ts = "u";
+    log_writeback_event("fail", reason_out.c_str(), "none", 0, taghash);
+    return false;
+  }
+  uint32_t now_ms = millis();
+  if (g_last_tag.uid_len == 0 || (uint32_t)(now_ms - g_last_tag_seen_ms) > 500) {
+    reason_out = "tag_not_present";
+    g_last_writeback_result = "fail";
+    g_last_writeback_reason = reason_out;
+    bool tv = false;
+    g_last_writeback_ts = wss_time_now_iso8601_utc(tv);
+    if (!tv) g_last_writeback_ts = "u";
+    log_writeback_event("fail", reason_out.c_str(), "none", 0, taghash);
+    return false;
+  }
+  if (g_last_tag.capacity_bytes == 0) {
+    reason_out = "capacity_unknown";
+    g_last_writeback_result = "fail";
+    g_last_writeback_reason = reason_out;
+    bool tv = false;
+    g_last_writeback_ts = wss_time_now_iso8601_utc(tv);
+    if (!tv) g_last_writeback_ts = "u";
+    log_writeback_event("fail", reason_out.c_str(), "none", 0, taghash);
+    return false;
+  }
+
+  WssStateStatus sm = wss_state_status();
+  bool time_valid = false;
+  String clear_ts = wss_time_now_iso8601_utc(time_valid);
+
+  String full = build_incident_payload_full(sm, clear_ts, time_valid);
+  String min = build_incident_payload_min(sm, clear_ts, time_valid);
+  String ultra = build_incident_payload_ultra(sm);
+
+  bool url_enabled = nfc_url_enabled();
+  String url = nfc_url_value();
+
+  String ndef;
+  String variant;
+  bool url_included = false;
+  bool truncated = false;
+
+  if (build_ndef_message(full, url_enabled, url, ndef) && ndef_fits(ndef, g_last_tag.capacity_bytes)) {
+    variant = "full";
+    url_included = url_enabled;
+  } else if (url_enabled) {
+    build_ndef_message(full, false, url, ndef);
+    if (ndef_fits(ndef, g_last_tag.capacity_bytes)) {
+      variant = "full";
+      url_included = false;
+    }
+  }
+
+  if (!variant.length()) {
+    if (build_ndef_message(min, url_enabled, url, ndef) && ndef_fits(ndef, g_last_tag.capacity_bytes)) {
+      variant = "min";
+      truncated = true;
+      url_included = url_enabled;
+    } else if (url_enabled) {
+      build_ndef_message(min, false, url, ndef);
+      if (ndef_fits(ndef, g_last_tag.capacity_bytes)) {
+        variant = "min";
+        truncated = true;
+        url_included = false;
+      }
+    }
+  }
+
+  if (!variant.length()) {
+    if (build_ndef_message(ultra, url_enabled, url, ndef) && ndef_fits(ndef, g_last_tag.capacity_bytes)) {
+      variant = "ultra";
+      truncated = true;
+      url_included = url_enabled;
+    } else if (url_enabled) {
+      build_ndef_message(ultra, false, url, ndef);
+      if (ndef_fits(ndef, g_last_tag.capacity_bytes)) {
+        variant = "ultra";
+        truncated = true;
+        url_included = false;
+      }
+    }
+  }
+
+  if (!variant.length()) {
+    reason_out = "payload_too_large";
+    return false;
+  }
+
+  uint32_t bytes_written = 0;
+  String err;
+  bool ok = g_reader.write_ndef(reinterpret_cast<const uint8_t*>(ndef.c_str()), ndef.length(), bytes_written, err);
+  if (!ok) {
+    reason_out = err.length() ? err : "write_failed";
+    g_last_writeback_result = "fail";
+    g_last_writeback_reason = reason_out;
+    bool tv = false;
+    g_last_writeback_ts = wss_time_now_iso8601_utc(tv);
+    if (!tv) g_last_writeback_ts = "u";
+    log_writeback_event("fail", reason_out.c_str(), variant.c_str(), bytes_written, taghash);
+    return false;
+  }
+
+  g_last_writeback_result = truncated ? "truncated" : "ok";
+  g_last_writeback_reason = url_included ? "ok" : "url_omitted";
+  bool tv = false;
+  g_last_writeback_ts = wss_time_now_iso8601_utc(tv);
+  if (!tv) g_last_writeback_ts = "u";
+  log_writeback_event(g_last_writeback_result.c_str(), g_last_writeback_reason.c_str(), variant.c_str(), bytes_written, taghash);
+  return true;
+}
+
 static void invalid_scan_record(uint32_t now_ms, uint32_t window_s, uint32_t max_scans, uint32_t duration_s) {
   if (max_scans == 0 || window_s == 0 || duration_s == 0) return;
   if (max_scans > kMaxInvalidScans) max_scans = kMaxInvalidScans;
@@ -376,6 +654,12 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_prov_active = false;
   g_prov_until_ms = 0;
   g_prov_mode = "none";
+  g_reader_ok = false;
+  g_last_tag = WssNfcTagInfo{};
+  g_last_tag_seen_ms = 0;
+  g_last_writeback_result = "";
+  g_last_writeback_reason = "";
+  g_last_writeback_ts = "";
   (void)wss_nfc_allowlist_begin(log);
 
   if (!g_status.feature_enabled) {
@@ -383,18 +667,26 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
     return;
   }
 
-  g_status.driver = "stub";
+  g_status.driver = "pn532";
   if (!g_status.enabled_cfg) {
     set_health_disabled_cfg();
     return;
   }
 
-  // Slice 0 does not bind a reader driver yet. Mark unavailable and log once.
-  set_health_unavailable();
-  if (g_log && !g_logged_unavailable) {
-    g_logged_unavailable = true;
-    g_log->log_warn("nfc", "nfc_unavailable", "nfc reader unavailable (driver not initialized)");
+  g_reader_ok = g_reader.begin();
+  if (!g_reader_ok) {
+    set_health_unavailable();
+    if (g_log && !g_logged_unavailable) {
+      g_logged_unavailable = true;
+      StaticJsonDocument<128> extra;
+      extra["reason"] = g_reader.last_error();
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      g_log->log_warn("nfc", "nfc_unavailable", "nfc reader unavailable", &o);
+    }
+    return;
   }
+  g_status.health = "ok";
+  g_status.reader_present = true;
 }
 
 void wss_nfc_loop() {
@@ -414,6 +706,7 @@ void wss_nfc_loop() {
       g_status.scan_fail_count = 0;
     }
     g_last_enabled_cfg = false;
+    g_reader_ok = false;
     set_health_disabled_cfg();
     return;
   }
@@ -421,11 +714,26 @@ void wss_nfc_loop() {
   if (!g_last_enabled_cfg) {
     g_last_enabled_cfg = true;
     g_logged_unavailable = false;
+    g_reader_ok = false;
   }
 
   uint32_t now_ms = millis();
-  // Slice 0: no reader driver yet. Keep status non-blocking.
-  set_health_unavailable();
+  if (!g_reader_ok) {
+    g_reader_ok = g_reader.begin();
+    if (!g_reader_ok && g_log && !g_logged_unavailable) {
+      g_logged_unavailable = true;
+      StaticJsonDocument<128> extra;
+      extra["reason"] = g_reader.last_error();
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      g_log->log_warn("nfc", "nfc_unavailable", "nfc reader unavailable", &o);
+    }
+  }
+  if (!g_reader_ok) {
+    set_health_unavailable();
+  } else {
+    g_status.health = "ok";
+    g_status.reader_present = true;
+  }
   lockout_update(now_ms);
   hold_tick(now_ms);
   prov_tick(now_ms);
@@ -434,11 +742,20 @@ void wss_nfc_loop() {
   if ((uint32_t)(now_ms - g_last_poll_ms) < kPollIntervalMs) return;
   g_last_poll_ms = now_ms;
 
-  // Placeholder for future driver poll. Emit a low-rate scan failure when reader is unavailable.
-  static const uint32_t kUnavailableLogIntervalMs = 30000;
-  if (g_status.last_scan_fail_ms == 0 ||
-      (uint32_t)(now_ms - g_status.last_scan_fail_ms) >= kUnavailableLogIntervalMs) {
-    log_scan_event(false, "reader_unavailable");
+  if (g_reader_ok) {
+    WssNfcTagInfo tag;
+    if (g_reader.poll(tag)) {
+      g_last_tag = tag;
+      g_last_tag_seen_ms = now_ms;
+      wss_nfc_on_uid(tag.uid, tag.uid_len);
+    }
+  } else {
+    // Emit a low-rate scan failure when reader is unavailable.
+    static const uint32_t kUnavailableLogIntervalMs = 30000;
+    if (g_status.last_scan_fail_ms == 0 ||
+        (uint32_t)(now_ms - g_status.last_scan_fail_ms) >= kUnavailableLogIntervalMs) {
+      log_scan_event(false, "reader_unavailable");
+    }
   }
 }
 
@@ -515,6 +832,12 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
     if (sm.state != "TRIGGERED") {
       log_action_event("clear", "rejected", "not_triggered", role_str, taghash);
       hold_reset("not_triggered", role_str);
+      return;
+    }
+    String wb_reason;
+    if (!attempt_incident_writeback(taghash, wb_reason)) {
+      log_action_event("clear", "rejected", "writeback_failed", role_str, taghash);
+      hold_reset("writeback_failed", role_str);
       return;
     }
     bool ok = wss_state_clear("nfc_clear:admin");
@@ -637,6 +960,10 @@ WssNfcStatus wss_nfc_status() {
   } else {
     g_status.provisioning_remaining_s = 0;
   }
+  g_status.driver_active = g_reader_ok;
+  g_status.last_writeback_result = g_last_writeback_result;
+  g_status.last_writeback_reason = g_last_writeback_reason;
+  g_status.last_writeback_ts = g_last_writeback_ts;
   return g_status;
 }
 
@@ -647,6 +974,7 @@ void wss_nfc_write_status_json(JsonObject out) {
   out["health"] = st.health;
   out["reader_present"] = st.reader_present;
   out["driver"] = st.driver;
+  out["driver_active"] = st.driver_active;
   out["last_role"] = st.last_role;
   out["last_scan_result"] = st.last_scan_result;
   if (st.last_scan_reason.length()) out["last_scan_reason"] = st.last_scan_reason;
@@ -664,4 +992,7 @@ void wss_nfc_write_status_json(JsonObject out) {
   out["provisioning_active"] = st.provisioning_active;
   out["provisioning_mode"] = st.provisioning_mode;
   out["provisioning_remaining_s"] = st.provisioning_remaining_s;
+  if (st.last_writeback_result.length()) out["last_writeback_result"] = st.last_writeback_result;
+  if (st.last_writeback_reason.length()) out["last_writeback_reason"] = st.last_writeback_reason;
+  if (st.last_writeback_ts.length()) out["last_writeback_ts"] = st.last_writeback_ts;
 }
