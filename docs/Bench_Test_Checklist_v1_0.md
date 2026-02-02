@@ -340,6 +340,59 @@ L8. Corrupt config recovery (negative path).
 - Corrupt/erase config storage (NVS) and reboot.
 - Expected: device restores defaults, requires Setup Wizard, and logs a `config_corrupt_or_reset` (or equivalent) event.
 
+## M7 Addendum (M7)
+
+M7.1 Admin eligibility + password (two-step, offline AP).
+- Connect to device AP; open the UI.
+- Scan a valid Admin NFC tag.
+- Expected: Status shows `Admin: Eligible (<remaining>)`.
+- Enter Admin password.
+- Expected: Status shows `Admin: Authenticated (<remaining>)`; admin-only sections become visible.
+- Failure signal: password alone grants admin without an eligible window, or eligible window appears without NFC.
+
+M7.2 Admin eligibility timeout behavior.
+- Scan a valid Admin NFC tag.
+- Wait for eligibility to expire without logging in.
+- Expected: Status returns to `Admin: Off`; admin-only actions remain blocked.
+- Failure signal: admin actions remain allowed after eligibility expires.
+
+M7.3 Log export (SD present, offline AP).
+- Ensure SD is mounted and active.
+- In Admin mode, use Download logs: Today, Last 7 days, All (may be limited).
+- Expected: each download returns a `.txt` file with JSONL lines; no buffering delays.
+- Expected: if size exceeds limit, response is HTTP 409 with: “Too large to download. Choose a shorter range.”
+- Failure signal: download succeeds without Admin mode, or returns secrets.
+
+M7.4 Log export (SD missing, flash fallback).
+- Remove SD and reboot (or ensure fallback is active).
+- In Admin mode, download Today.
+- Expected: file starts with header line `# FLASH_FALLBACK_LOG_SNAPSHOT (most recent entries)`.
+- Failure signal: download fails silently or includes raw secrets.
+
+M7.5 OTA upload (admin-only, streamed, reboot-on-success).
+- In Admin mode, upload a valid `.bin`.
+- Expected: UI shows result “Rebooting now. Reconnect to the device Wi‑Fi.”; device reboots.
+- Expected: OTA events logged with start/result, no firmware contents logged.
+- Failure signal: OTA allowed without Admin mode, or no reboot on success.
+
+M7.6 Output tests (admin-only, 5s timeout + revert).
+- In Admin mode, press “Test horn (5s)” then “Test light (5s)”.
+- Expected: outputs activate for ~5s and stop automatically; no state transition occurs.
+- Press “Stop tests” during an active test.
+- Expected: outputs stop immediately; normal output policy resumes.
+- Failure signal: outputs remain on, or alarm state changes.
+
+M7.7 UI section order + “Unknown” handling.
+- Verify section order: Status → Recent Events → Controls → Config → Diagnostics → Maintenance.
+- Force time invalid (RTC missing) and reload UI.
+- Expected: Status shows “Unknown” (never shows `"u"`), and time helper text appears.
+- Failure signal: “u” appears or sections are out of order.
+
+M7.8 No-secrets and no-UID exposure (UI + logs).
+- Trigger admin/login, log export, and OTA/upload attempts.
+- Expected: no raw NFC UID, passwords, or tokens appear in UI, `/api/events`, or downloaded logs.
+- Failure signal: any raw UID or secret value is visible.
+
 ## M) End-to-end regression set (recommended)
 
 After any firmware change, rerun:
