@@ -395,7 +395,8 @@ static void handle_logs_download() {
     return;
   }
 
-  if (!wss_storage_stream_logs(range, server.client(), kLogDownloadMaxBytes, bytes_sent, err)) {
+  auto client = server.client();
+  if (!wss_storage_stream_logs(range, client, kLogDownloadMaxBytes, bytes_sent, err)) {
     log_logs_event("error", "logs_download_failed", "logs download failed",
       range_str.c_str(), 0, 0, err.c_str());
     return;
