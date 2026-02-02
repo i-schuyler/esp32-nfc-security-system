@@ -12,6 +12,12 @@
 static WssConfigStore* g_cfg = nullptr;
 static WssEventLogger* g_log = nullptr;
 static WssOutputsStatus g_status;
+static String g_last_state = "DISARMED";
+static bool g_test_active = false;
+static bool g_test_horn_active = false;
+static bool g_test_light_active = false;
+static uint32_t g_test_until_ms = 0;
+static const uint32_t kTestDurationMs = 5000;
 
 static bool is_time_valid() {
   time_t now = time(nullptr);
@@ -107,6 +113,41 @@ static void apply_steady_for(int horn_on, int light_on) {
   write_pin(WSS_PIN_LIGHT_OUT, light_on != 0);
 }
 
+static void apply_test_outputs() {
+  bool horn_on = g_test_horn_active && g_status.horn_pin_configured;
+  bool light_on = g_test_light_active && g_status.light_pin_configured;
+  apply_steady_for(horn_on ? 1 : 0, light_on ? 1 : 0);
+  g_status.horn_active = horn_on;
+  g_status.light_active = light_on;
+}
+
+static void update_test_status() {
+  g_status.test_active = g_test_active;
+  g_status.test_horn_active = g_test_horn_active;
+  g_status.test_light_active = g_test_light_active;
+  if (!g_test_active) {
+    g_status.test_remaining_s = 0;
+    return;
+  }
+  uint32_t now_ms = millis();
+  if ((int32_t)(g_test_until_ms - now_ms) <= 0) {
+    g_status.test_remaining_s = 0;
+  } else {
+    g_status.test_remaining_s = (g_test_until_ms - now_ms) / 1000UL;
+  }
+}
+
+static void log_test_event(const char* event_type, const char* msg,
+                           bool horn_active, bool light_active, const char* reason) {
+  if (!g_log) return;
+  StaticJsonDocument<192> extra;
+  extra["horn"] = horn_active;
+  extra["light"] = light_active;
+  if (reason && reason[0]) extra["reason"] = reason;
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  g_log->log_info("outputs", event_type, msg, &o);
+}
+
 void wss_outputs_apply_state(const String& state_str) {
   // Refresh config-derived values each apply (keeps behavior predictable after config patches).
   g_status.horn_enabled_cfg = get_cfg_bool("horn_enabled", true);
@@ -115,7 +156,14 @@ void wss_outputs_apply_state(const String& state_str) {
   g_status.light_pattern = norm_pattern(get_cfg_str("light_pattern", "steady"));
   g_status.silenced_light_pattern = norm_pattern(get_cfg_str("silenced_light_pattern", "steady"));
 
+  g_last_state = state_str;
   g_status.applied_for_state = state_str;
+
+  if (g_test_active) {
+    apply_test_outputs();
+    update_test_status();
+    return;
+  }
 
   bool horn = false;
   bool light = false;
@@ -157,14 +205,77 @@ void wss_outputs_apply_state(const String& state_str) {
   apply_steady_for(horn ? 1 : 0, light ? 1 : 0);
   g_status.horn_active = horn;
   g_status.light_active = light;
+  update_test_status();
 }
 
 void wss_outputs_loop() {
   // Placeholder for time-based patterns (strobe) in later milestones.
   // In M4, outputs are applied whenever state changes via wss_outputs_apply_state().
   (void)is_time_valid();
+  if (!g_test_active) return;
+  uint32_t now_ms = millis();
+  if ((int32_t)(g_test_until_ms - now_ms) >= 0) {
+    update_test_status();
+    return;
+  }
+  g_test_active = false;
+  g_test_horn_active = false;
+  g_test_light_active = false;
+  g_test_until_ms = 0;
+  log_test_event("output_test_timeout", "output test timed out", false, false, "timeout");
+  wss_outputs_apply_state(g_last_state);
+}
+
+bool wss_outputs_test_start(const char* which, uint32_t duration_ms, String& err) {
+  err = "";
+  if (!which || !which[0]) {
+    err = "missing_target";
+    return false;
+  }
+  String w(which);
+  w.toLowerCase();
+  bool want_horn = (w == "horn");
+  bool want_light = (w == "light");
+  if (!want_horn && !want_light) {
+    err = "unknown_target";
+    return false;
+  }
+  if (want_horn && !g_status.horn_pin_configured) {
+    err = "horn_unavailable";
+    return false;
+  }
+  if (want_light && !g_status.light_pin_configured) {
+    err = "light_unavailable";
+    return false;
+  }
+  uint32_t now_ms = millis();
+  uint32_t dur = duration_ms ? duration_ms : kTestDurationMs;
+  uint32_t until_ms = now_ms + dur;
+  if (g_test_active && (int32_t)(g_test_until_ms - until_ms) > 0) {
+    until_ms = g_test_until_ms;
+  }
+  g_test_until_ms = until_ms;
+  g_test_active = true;
+  if (want_horn) g_test_horn_active = true;
+  if (want_light) g_test_light_active = true;
+  apply_test_outputs();
+  update_test_status();
+  log_test_event("output_test_start", "output test started",
+    g_test_horn_active, g_test_light_active, "");
+  return true;
+}
+
+void wss_outputs_test_stop(const char* reason) {
+  if (!g_test_active) return;
+  g_test_active = false;
+  g_test_horn_active = false;
+  g_test_light_active = false;
+  g_test_until_ms = 0;
+  log_test_event("output_test_stop", "output test stopped", false, false, reason);
+  wss_outputs_apply_state(g_last_state);
 }
 
 WssOutputsStatus wss_outputs_status() {
+  update_test_status();
   return g_status;
 }

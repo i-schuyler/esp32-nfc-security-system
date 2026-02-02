@@ -210,6 +210,7 @@
     setHidden($('adminLogin'), state.adminActive);
     setHidden($('adminActive'), !state.adminActive);
     setHidden($('otaCard'), !state.adminActive);
+    setHidden($('outputTestsCard'), !state.adminActive);
 
     setText('controlsHint', j.state_machine_active ? '' : 'Not active in M1 (stub).');
     setText('topNote', state.setupRequired ? 'Setup required.' : '');
@@ -396,6 +397,27 @@
   });
   $('btnLogsAll').addEventListener('click', async () => {
     await downloadLogs('all');
+  });
+
+  async function runTest(endpoint, okMessage) {
+    setText('testError', '');
+    const r = await jpost(endpoint, {});
+    if (!r.ok) {
+      const msg = (r.json && r.json.error) ? `Error: ${r.json.error}` : `Error: ${r.status}`;
+      setText('testError', msg);
+      return;
+    }
+    setText('testError', okMessage || 'OK');
+  }
+
+  $('btnTestHorn').addEventListener('click', async () => {
+    await runTest('/api/test/horn', 'Horn test started.');
+  });
+  $('btnTestLight').addEventListener('click', async () => {
+    await runTest('/api/test/light', 'Light test started.');
+  });
+  $('btnTestStop').addEventListener('click', async () => {
+    await runTest('/api/test/stop', 'Tests stopped.');
   });
 
   $('otaFile').addEventListener('change', () => {
