@@ -30,6 +30,12 @@ static const size_t kMaxInvalidScans = 16;
 static uint32_t g_invalid_scan_ms[kMaxInvalidScans];
 static size_t g_invalid_scan_count = 0;
 static size_t g_invalid_scan_head = 0;
+static bool g_hold_active = false;
+static bool g_hold_ready = false;
+static uint32_t g_hold_started_ms = 0;
+static uint32_t g_hold_last_seen_ms = 0;
+static String g_hold_taghash;
+static uint32_t g_last_hold_cancel_log_ms = 0;
 
 static bool feature_enabled() {
 #if defined(WSS_FEATURE_NFC) && WSS_FEATURE_NFC
@@ -135,6 +141,17 @@ static void log_action_event(const char* action, const char* outcome, const char
   }
 }
 
+static void log_hold_event(const char* event_type, const char* reason, const char* role,
+                           const String& taghash) {
+  if (!g_log) return;
+  StaticJsonDocument<192> extra;
+  if (reason && reason[0]) extra["reason"] = reason;
+  if (role && role[0]) extra["role"] = role;
+  if (taghash.length()) extra["tag_prefix"] = taghash.substring(0, 8);
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  g_log->log_info("nfc", event_type, "nfc hold event", &o);
+}
+
 static uint32_t cfg_u32(const char* k, uint32_t def) {
   if (!g_cfg) return def;
   JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
@@ -213,6 +230,53 @@ static void lockout_update(uint32_t now_ms) {
   lockout_exit("expired");
 }
 
+static void hold_reset(const char* reason, const char* role) {
+  if (g_hold_active) {
+    uint32_t now_ms = millis();
+    if ((uint32_t)(now_ms - g_last_hold_cancel_log_ms) >= 2000) {
+      g_last_hold_cancel_log_ms = now_ms;
+      log_hold_event("hold_cancel", reason ? reason : "cancel", role, g_hold_taghash);
+    }
+  }
+  g_hold_active = false;
+  g_hold_ready = false;
+  g_hold_started_ms = 0;
+  g_hold_last_seen_ms = 0;
+  g_hold_taghash = "";
+}
+
+static bool hold_update(const String& taghash, uint32_t now_ms, const char* role) {
+  static const uint32_t kHoldMs = 3000;
+  static const uint32_t kHoldPresentTimeoutMs = 350;
+
+  if (!g_hold_active || taghash != g_hold_taghash) {
+    if (g_hold_active && taghash != g_hold_taghash) {
+      hold_reset("tag_changed", role);
+    }
+    g_hold_active = true;
+    g_hold_ready = false;
+    g_hold_taghash = taghash;
+    g_hold_started_ms = now_ms;
+    g_hold_last_seen_ms = now_ms;
+    return false;
+  }
+
+  g_hold_last_seen_ms = now_ms;
+  if (!g_hold_ready && (uint32_t)(now_ms - g_hold_started_ms) >= kHoldMs) {
+    g_hold_ready = true;
+  }
+
+  return g_hold_ready;
+}
+
+static void hold_tick(uint32_t now_ms) {
+  if (!g_hold_active) return;
+  static const uint32_t kHoldPresentTimeoutMs = 350;
+  if ((uint32_t)(now_ms - g_hold_last_seen_ms) > kHoldPresentTimeoutMs) {
+    hold_reset("tag_removed", g_status.last_role.c_str());
+  }
+}
+
 static void invalid_scan_record(uint32_t now_ms, uint32_t window_s, uint32_t max_scans, uint32_t duration_s) {
   if (max_scans == 0 || window_s == 0 || duration_s == 0) return;
   if (max_scans > kMaxInvalidScans) max_scans = kMaxInvalidScans;
@@ -274,6 +338,12 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_last_lockout_ignored_log_ms = 0;
   g_invalid_scan_count = 0;
   g_invalid_scan_head = 0;
+  g_hold_active = false;
+  g_hold_ready = false;
+  g_hold_started_ms = 0;
+  g_hold_last_seen_ms = 0;
+  g_hold_taghash = "";
+  g_last_hold_cancel_log_ms = 0;
 
   if (!g_status.feature_enabled) {
     set_health_disabled_build();
@@ -320,11 +390,12 @@ void wss_nfc_loop() {
     g_logged_unavailable = false;
   }
 
+  uint32_t now_ms = millis();
   // Slice 0: no reader driver yet. Keep status non-blocking.
   set_health_unavailable();
-  lockout_update(millis());
+  lockout_update(now_ms);
+  hold_tick(now_ms);
 
-  uint32_t now_ms = millis();
   static const uint32_t kPollIntervalMs = 150;
   if ((uint32_t)(now_ms - g_last_poll_ms) < kPollIntervalMs) return;
   g_last_poll_ms = now_ms;
@@ -357,6 +428,8 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
   const char* reason = (role == WSS_NFC_ROLE_UNKNOWN) ? "allowlist_unknown" : "allowlist_match";
   log_scan_ok(role_str, reason, taghash);
 
+  bool hold_ready = hold_update(taghash, now_ms, role_str);
+
   uint32_t window_s = cfg_u32("invalid_scan_window_s", 30);
   uint32_t max_scans = cfg_u32("invalid_scan_max", 5);
   uint32_t duration_s = cfg_u32("lockout_duration_s", 60);
@@ -378,6 +451,28 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
       }
       return;
     }
+  }
+
+  if (hold_ready) {
+    WssStateStatus sm = wss_state_status();
+    if (role != WSS_NFC_ROLE_ADMIN) {
+      log_action_event("clear", "rejected", "not_admin", role_str, taghash);
+      hold_reset("not_admin", role_str);
+      return;
+    }
+    if (sm.state != "TRIGGERED") {
+      log_action_event("clear", "rejected", "not_triggered", role_str, taghash);
+      hold_reset("not_triggered", role_str);
+      return;
+    }
+    bool ok = wss_state_clear("nfc_clear:admin");
+    if (ok) {
+      log_action_event("clear", "allowed", "ok", role_str, taghash);
+    } else {
+      log_action_event("clear", "rejected", "state_rejected", role_str, taghash);
+    }
+    hold_reset("completed", role_str);
+    return;
   }
 
   if (debounced(taghash, now_ms)) return;
@@ -426,7 +521,17 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
 }
 
 WssNfcStatus wss_nfc_status() {
-  lockout_update(millis());
+  uint32_t now_ms = millis();
+  lockout_update(now_ms);
+  hold_tick(now_ms);
+  g_status.hold_active = g_hold_active;
+  g_status.hold_ready = g_hold_ready;
+  if (g_hold_active && g_hold_started_ms != 0) {
+    uint32_t elapsed = (uint32_t)(now_ms - g_hold_started_ms);
+    g_status.hold_progress_s = elapsed / 1000UL;
+  } else {
+    g_status.hold_progress_s = 0;
+  }
   return g_status;
 }
 
@@ -448,4 +553,7 @@ void wss_nfc_write_status_json(JsonObject out) {
   out["last_scan_fail_ms"] = st.last_scan_fail_ms;
   out["scan_ok_count"] = st.scan_ok_count;
   out["scan_fail_count"] = st.scan_fail_count;
+  out["hold_active"] = st.hold_active;
+  out["hold_ready"] = st.hold_ready;
+  out["hold_progress_s"] = st.hold_progress_s;
 }
