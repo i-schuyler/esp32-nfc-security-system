@@ -8,6 +8,7 @@
 #include "../config/config_store.h"
 #include "../logging/event_logger.h"
 #include "nfc_allowlist.h"
+#include "../state_machine/state_machine.h"
 
 namespace {
 
@@ -17,6 +18,9 @@ static WssNfcStatus g_status;
 static uint32_t g_last_poll_ms = 0;
 static bool g_logged_unavailable = false;
 static bool g_last_enabled_cfg = true;
+static String g_last_taghash;
+static uint32_t g_last_tag_ms = 0;
+static uint32_t g_last_debounce_log_ms = 0;
 
 static bool feature_enabled() {
 #if defined(WSS_FEATURE_NFC) && WSS_FEATURE_NFC
@@ -105,6 +109,38 @@ static void log_scan_ok(const char* role, const char* reason, const String& tagh
   g_log->log_info("nfc", "nfc_scan", "nfc scan ok", &o);
 }
 
+static void log_action_event(const char* action, const char* outcome, const char* reason,
+                             const char* role, const String& taghash) {
+  if (!g_log) return;
+  StaticJsonDocument<256> extra;
+  if (action && action[0]) extra["action"] = action;
+  if (outcome && outcome[0]) extra["outcome"] = outcome;
+  if (role && role[0]) extra["role"] = role;
+  if (reason && reason[0]) extra["reason"] = reason;
+  if (taghash.length()) extra["tag_prefix"] = taghash.substring(0, 8);
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  if (outcome && strcmp(outcome, "allowed") == 0) {
+    g_log->log_info("nfc", "nfc_action", "nfc action allowed", &o);
+  } else {
+    g_log->log_warn("nfc", "nfc_action", "nfc action rejected", &o);
+  }
+}
+
+static bool debounced(const String& taghash, uint32_t now_ms) {
+  if (taghash.length() == 0) return false;
+  static const uint32_t kDebounceMs = 1500;
+  if (taghash == g_last_taghash && (uint32_t)(now_ms - g_last_tag_ms) < kDebounceMs) {
+    if ((uint32_t)(now_ms - g_last_debounce_log_ms) >= 2000) {
+      g_last_debounce_log_ms = now_ms;
+      log_action_event("tap", "ignored", "debounced", g_status.last_role.c_str(), taghash);
+    }
+    return true;
+  }
+  g_last_taghash = taghash;
+  g_last_tag_ms = now_ms;
+  return false;
+}
+
 } // namespace
 
 void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
@@ -119,6 +155,9 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_last_enabled_cfg = g_status.enabled_cfg;
   g_last_poll_ms = 0;
   g_logged_unavailable = false;
+  g_last_taghash = "";
+  g_last_tag_ms = 0;
+  g_last_debounce_log_ms = 0;
 
   if (!g_status.feature_enabled) {
     set_health_disabled_build();
@@ -182,8 +221,14 @@ void wss_nfc_loop() {
 }
 
 void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
+  if (!g_status.feature_enabled || !g_status.enabled_cfg) {
+    log_scan_event(false, "nfc_disabled");
+    log_action_event("tap", "rejected", "nfc_disabled", "unknown", "");
+    return;
+  }
   if (!uid || uid_len == 0) {
     log_scan_event(false, "uid_invalid");
+    log_action_event("tap", "rejected", "uid_invalid", "unknown", "");
     return;
   }
   String taghash = wss_nfc_taghash(uid, uid_len);
@@ -191,6 +236,49 @@ void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len) {
   const char* role_str = wss_nfc_role_to_string(role);
   const char* reason = (role == WSS_NFC_ROLE_UNKNOWN) ? "allowlist_unknown" : "allowlist_match";
   log_scan_ok(role_str, reason, taghash);
+
+  uint32_t now_ms = millis();
+  if (debounced(taghash, now_ms)) return;
+
+  if (role == WSS_NFC_ROLE_UNKNOWN) {
+    log_action_event("tap", "rejected", "not_in_allowlist", role_str, taghash);
+    return;
+  }
+
+  WssStateStatus sm = wss_state_status();
+  if (sm.state == "DISARMED") {
+    bool allow_user_arm = cfg_bool("allow_user_arm", true);
+    bool allowed = (role == WSS_NFC_ROLE_ADMIN) || (role == WSS_NFC_ROLE_USER && allow_user_arm);
+    if (!allowed) {
+      log_action_event("arm", "rejected", "role_not_permitted", role_str, taghash);
+      return;
+    }
+    bool ok = wss_state_arm((role == WSS_NFC_ROLE_ADMIN) ? "nfc_arm:admin" : "nfc_arm:user");
+    if (ok) {
+      log_action_event("arm", "allowed", "ok", role_str, taghash);
+    } else {
+      log_action_event("arm", "rejected", "state_rejected", role_str, taghash);
+    }
+    return;
+  }
+
+  if (sm.state == "ARMED") {
+    bool allow_user_disarm = cfg_bool("allow_user_disarm", true);
+    bool allowed = (role == WSS_NFC_ROLE_ADMIN) || (role == WSS_NFC_ROLE_USER && allow_user_disarm);
+    if (!allowed) {
+      log_action_event("disarm", "rejected", "role_not_permitted", role_str, taghash);
+      return;
+    }
+    bool ok = wss_state_disarm((role == WSS_NFC_ROLE_ADMIN) ? "nfc_disarm:admin" : "nfc_disarm:user");
+    if (ok) {
+      log_action_event("disarm", "allowed", "ok", role_str, taghash);
+    } else {
+      log_action_event("disarm", "rejected", "state_rejected", role_str, taghash);
+    }
+    return;
+  }
+
+  log_action_event("tap", "rejected", "state_not_supported_in_slice2", role_str, taghash);
 }
 
 WssNfcStatus wss_nfc_status() {
