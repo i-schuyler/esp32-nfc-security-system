@@ -19,6 +19,12 @@
     return h;
   }
 
+  function authHeader() {
+    const h = {};
+    if (state.adminToken) h['X-Admin-Token'] = state.adminToken;
+    return h;
+  }
+
   async function jget(url) {
     const r = await fetch(url, { cache: 'no-store', headers: hdrs() });
     const t = await r.text();
@@ -203,6 +209,7 @@
 
     setHidden($('adminLogin'), state.adminActive);
     setHidden($('adminActive'), !state.adminActive);
+    setHidden($('otaCard'), !state.adminActive);
 
     setText('controlsHint', j.state_machine_active ? '' : 'Not active in M1 (stub).');
     setText('topNote', state.setupRequired ? 'Setup required.' : '');
@@ -258,6 +265,16 @@
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function setOtaFileInfo(file) {
+    if (!file) {
+      setText('otaFileName', '—');
+      setText('otaFileSize', '—');
+      return;
+    }
+    setText('otaFileName', file.name || '—');
+    setText('otaFileSize', `${file.size} bytes`);
   }
 
   $('wizStep').addEventListener('change', () => {
@@ -379,6 +396,34 @@
   });
   $('btnLogsAll').addEventListener('click', async () => {
     await downloadLogs('all');
+  });
+
+  $('otaFile').addEventListener('change', () => {
+    const file = $('otaFile').files && $('otaFile').files[0];
+    setOtaFileInfo(file);
+  });
+
+  $('btnOtaUpload').addEventListener('click', async () => {
+    const file = $('otaFile').files && $('otaFile').files[0];
+    if (!file) return;
+    setText('otaResult', '—');
+    const fd = new FormData();
+    fd.append('firmware', file, file.name || 'firmware.bin');
+    const r = await fetch('/api/ota/upload', { method: 'POST', headers: authHeader(), body: fd });
+    let msg = '';
+    try {
+      const j = await r.json();
+      if (j && j.message) msg = j.message;
+      if (j && j.ok) {
+        setText('otaResult', msg || 'Rebooting now. Reconnect to the device Wi-Fi.');
+        return;
+      }
+      if (j && j.error && !msg) msg = `Error: ${j.error}`;
+    } catch (e) {}
+    if (!r.ok && !msg) {
+      msg = r.status === 403 ? 'Admin mode required.' : `Error: ${r.status}`;
+    }
+    setText('otaResult', msg || 'Upload failed.');
   });
 
   $('btnWizardRestart').addEventListener('click', async () => {
