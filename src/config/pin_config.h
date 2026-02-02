@@ -23,6 +23,14 @@
 #define WSS_PIN_I2C_SCL (-1)
 #endif
 
+// NFC (PN532) I2C control pins (optional; default unset)
+#ifndef WSS_PIN_NFC_IRQ
+#define WSS_PIN_NFC_IRQ (-1)
+#endif
+#ifndef WSS_PIN_NFC_RESET
+#define WSS_PIN_NFC_RESET (-1)
+#endif
+
 // SPI (microSD)
 // NOTE: CS is required to attempt SD initialization.
 #ifndef WSS_PIN_SD_CS
