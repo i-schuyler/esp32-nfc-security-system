@@ -137,6 +137,44 @@ F10. Time-invalid sentinel.
 - Boot without valid RTC/time, then arm and clear.
 - Expected: timestamps are `"u"` (unknown) or omitted in ultra-minimal; logs/UI reflect time invalid.
 
+F11. PN532 presence/health.
+- Boot with PN532 connected.
+- Expected: NFC health is OK; reader present is true; logs show reader status.
+
+F12. PN532 disconnect path.
+- Disconnect PN532 while running (or boot without PN532).
+- Expected: NFC health shows unavailable; logs show reader unavailable; system remains operable via web UI.
+
+F13. Lockout + admin early-clear.
+- Perform invalid scans until lockout triggers.
+- Expected: lockout entered and logged; NFC actions ignored during lockout.
+- Scan a valid Admin tag.
+- Expected: lockout clears early (logged) and scan is processed normally.
+
+F14. Hold-to-confirm clear (admin).
+- Enter TRIGGERED, then hold Admin tag for the required duration.
+- Expected: clear occurs only after hold threshold; short tap does not clear; logs show hold action.
+
+F15. Provisioning session add/remove.
+- Enter Admin Config Mode.
+- Start provisioning session; add Admin and User tags; remove a tag.
+- Expected: provisioning events logged with tag prefix only; allowlist persists across reboot.
+
+F16. Clear rejected on writeback fail.
+- Force writeback failure (e.g., remove tag mid-write or use an unwritable tag).
+- Attempt Admin hold clear.
+- Expected: clear rejected; writeback failure logged; state remains TRIGGERED.
+
+F17. Tag capacity fallback coverage.
+- Use at least one small Type 2 tag (e.g., NTAG213) and one larger (e.g., NTAG215/216).
+- Expected: larger tag uses full payload; smaller tag uses minimal/ultra with truncation logged.
+
+F18. URL record preservation behavior.
+- Enable URL record; perform clear with adequate capacity.
+- Expected: URL record preserved alongside system record; omission is logged if capacity is too small.
+- Disable URL record; perform clear.
+- Expected: only system record is written.
+
 ## G) State machine and control parity (NFC and web)
 
 G1. DISARMED → ARMED via NFC (if enabled).

@@ -50,6 +50,10 @@ Two separate writebacks requested:
 2) **Incident summary written when clearing a triggered alarm**
 3) **No writeback on disarm** (disarm is logged only)
 
+Clear Alarm writeback gating:
+- When an Admin attempts Clear Alarm, the system attempts incident writeback first.
+- If the writeback fails, the clear is rejected (no state change) and the failure is logged.
+
 ### Privacy rule
 Never store secrets on the tag. Store only operational summaries.
 
