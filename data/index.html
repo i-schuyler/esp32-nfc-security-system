@@ -82,6 +82,19 @@
     </div>
   </section>
 
+  <section class="card hidden" id="outputTestsCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Output tests (non-security)</h2>
+    <p class="small muted">Tests do not arm or disarm the system. Tests stop automatically.</p>
+    <div class="row">
+      <div class="two">
+        <button id="btnTestHorn">Test horn (5s)</button>
+        <button id="btnTestLight">Test light (5s)</button>
+      </div>
+      <button id="btnTestStop">Stop tests</button>
+      <p class="small muted" id="testError"></p>
+    </div>
+  </section>
+
   <section class="card" id="adminCard">
     <h2 style="font-size:16px;margin:0 0 8px 0;">Admin</h2>
     <div class="row">

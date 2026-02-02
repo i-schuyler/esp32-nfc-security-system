@@ -25,6 +25,10 @@ struct WssOutputsStatus {
   String horn_pattern = "steady";
   String light_pattern = "steady";
   String silenced_light_pattern = "steady";
+  bool test_active = false;
+  bool test_horn_active = false;
+  bool test_light_active = false;
+  uint32_t test_remaining_s = 0;
 
   // Effective state after applying config + current alarm state.
   bool horn_active = false;
@@ -43,5 +47,12 @@ void wss_outputs_loop();
 // Applies the output policy for the provided alarm state.
 // state_str must be one of: DISARMED|ARMED|TRIGGERED|SILENCED|FAULT.
 void wss_outputs_apply_state(const String& state_str);
+
+// Start a non-security output test (duration_ms defaulted by caller).
+// Returns false if output is unavailable.
+bool wss_outputs_test_start(const char* which, uint32_t duration_ms, String& err);
+
+// Stop any active output test(s) and restore normal state outputs.
+void wss_outputs_test_stop(const char* reason);
 
 WssOutputsStatus wss_outputs_status();

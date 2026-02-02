@@ -212,6 +212,10 @@ static void handle_status() {
     o["light_pattern"] = out.light_pattern;
     o["silenced_light_pattern"] = out.silenced_light_pattern;
     o["applied_for_state"] = out.applied_for_state;
+    o["test_active"] = out.test_active;
+    o["test_horn_active"] = out.test_horn_active;
+    o["test_light_active"] = out.test_light_active;
+    o["test_remaining_s"] = out.test_remaining_s;
   }
 
   // M5: sensors status (append-only)
@@ -948,6 +952,26 @@ static void handle_control_action(const char* which) {
   }
 }
 
+static void handle_test_action(const char* which) {
+  const uint32_t duration_ms = 5000;
+  String err;
+  bool ok = wss_outputs_test_start(which, duration_ms, err);
+  StaticJsonDocument<256> doc;
+  doc["ok"] = ok;
+  if (!ok) {
+    doc["error"] = err.length() ? err : "test_start_failed";
+    send_json(409, doc);
+    return;
+  }
+  doc["duration_ms"] = duration_ms;
+  send_json(200, doc);
+}
+
+static void handle_test_stop() {
+  wss_outputs_test_stop("admin_stop");
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handle_nfc_provision_start() {
   if (!admin_required("nfc_provision_start")) return;
   StaticJsonDocument<256> body;
@@ -1049,6 +1073,11 @@ void wss_web_begin(WssConfigStore& cfg, WssEventLogger& log) {
   server.on("/api/control/arm", HTTP_POST, []() { if (!admin_required("control_arm")) return; handle_control_action("arm"); });
   server.on("/api/control/disarm", HTTP_POST, []() { if (!admin_required("control_disarm")) return; handle_control_action("disarm"); });
   server.on("/api/control/silence", HTTP_POST, []() { if (!admin_required("control_silence")) return; handle_control_action("silence"); });
+
+  // Output tests (admin only).
+  server.on("/api/test/horn", HTTP_POST, []() { if (!admin_required("test_horn")) return; handle_test_action("horn"); });
+  server.on("/api/test/light", HTTP_POST, []() { if (!admin_required("test_light")) return; handle_test_action("light"); });
+  server.on("/api/test/stop", HTTP_POST, []() { if (!admin_required("test_stop")) return; handle_test_stop(); });
 
   // M6: NFC provisioning (admin only).
   server.on("/api/nfc/provision/start", HTTP_POST, handle_nfc_provision_start);
