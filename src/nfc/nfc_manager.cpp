@@ -390,13 +390,12 @@ void wss_nfc_loop() {
     g_logged_unavailable = false;
   }
 
+  uint32_t now_ms = millis();
   // Slice 0: no reader driver yet. Keep status non-blocking.
   set_health_unavailable();
-  uint32_t now_ms = millis();
   lockout_update(now_ms);
   hold_tick(now_ms);
 
-  uint32_t now_ms = millis();
   static const uint32_t kPollIntervalMs = 150;
   if ((uint32_t)(now_ms - g_last_poll_ms) < kPollIntervalMs) return;
   g_last_poll_ms = now_ms;
