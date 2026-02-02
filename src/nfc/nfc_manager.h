@@ -29,6 +29,9 @@ struct WssNfcStatus {
   bool hold_active = false;
   bool hold_ready = false;
   uint32_t hold_progress_s = 0;
+  bool provisioning_active = false;
+  String provisioning_mode; // add_user|add_admin|remove|none
+  uint32_t provisioning_remaining_s = 0;
   uint32_t last_scan_ms = 0;
   uint32_t last_scan_ok_ms = 0;
   uint32_t last_scan_fail_ms = 0;
@@ -39,5 +42,8 @@ struct WssNfcStatus {
 void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log);
 void wss_nfc_loop();
 void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len);
+bool wss_nfc_provision_start(const char* mode);
+bool wss_nfc_provision_set_mode(const char* mode);
+void wss_nfc_provision_stop(const char* reason);
 WssNfcStatus wss_nfc_status();
 void wss_nfc_write_status_json(JsonObject out);

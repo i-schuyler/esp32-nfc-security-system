@@ -42,3 +42,7 @@ bool wss_storage_append_line(const String& line);
 
 // Export most-recent flash ring items (newest-last). Returns number written.
 size_t wss_storage_read_fallback(String* out, size_t max_items);
+
+// NFC allowlist persistence (SD preferred; returns false if SD unavailable).
+bool wss_storage_write_allowlist(const String& payload, String& err);
+bool wss_storage_read_allowlist(String& payload, String& err);
