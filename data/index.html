@@ -34,17 +34,75 @@
   <section class="card" id="statusCard">
     <div class="row" id="status">
       <div class="kv"><div class="k">State</div><div class="v" id="state">—</div></div>
-      <div class="kv"><div class="k">Wi‑Fi Mode</div><div class="v" id="wifiMode">—</div></div>
-      <div class="kv"><div class="k">IP</div><div class="v" id="ip">—</div></div>
-      <div class="kv"><div class="k">Firmware</div><div class="v" id="fw">—</div></div>
-      <div class="kv"><div class="k">Device</div><div class="v" id="dev">—</div></div>
-      <div class="kv"><div class="k">Setup</div><div class="v" id="setup">—</div></div>
-      <div class="kv"><div class="k">Admin Mode</div><div class="v" id="admin">—</div></div>
-      <div class="kv"><div class="k">Flash UI Assets</div><div class="v" id="fs">—</div></div>
-      <div class="kv"><div class="k">RTC</div><div class="v" id="rtc">—</div></div>
-      <div class="kv"><div class="k">Time</div><div class="v" id="now">—</div></div>
-      <div class="kv"><div class="k">SD</div><div class="v" id="sd">—</div></div>
+      <div class="kv"><div class="k">Last change</div><div class="v" id="lastChange">—</div></div>
+      <div class="kv"><div class="k">Time</div><div class="v" id="timeStatus">—</div></div>
+      <p class="small muted" id="timeHelper"></p>
+      <div class="kv"><div class="k">Network</div><div class="v" id="network">—</div></div>
+      <div class="kv"><div class="k">Storage</div><div class="v" id="storageStatus">—</div></div>
+      <div class="kv"><div class="k">NFC</div><div class="v" id="nfcStatus">—</div></div>
+      <div class="kv"><div class="k">Lockout</div><div class="v" id="lockout">—</div></div>
+      <div class="kv"><div class="k">Admin mode</div><div class="v" id="admin">—</div></div>
+      <p class="small muted" id="stateHelper"></p>
     </div>
+  </section>
+
+  <section class="card" id="eventsCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Recent Events</h2>
+    <div class="row" id="events"></div>
+  </section>
+
+  <section class="card" id="controlsCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Controls</h2>
+    <p class="small muted" id="controlsHint"></p>
+    <div class="row">
+      <button id="btnArm">Arm</button>
+      <button id="btnDisarm">Disarm</button>
+      <button id="btnSilence">Silence</button>
+      <p class="small muted" id="controlsError"></p>
+    </div>
+  </section>
+
+  <section class="card" id="logsCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Download logs</h2>
+    <div class="row">
+      <div class="two">
+        <button id="btnLogsToday">Today</button>
+        <button id="btnLogs7d">Last 7 days</button>
+      </div>
+      <button id="btnLogsAll">All (may be limited)</button>
+      <p class="small muted" id="logsError"></p>
+    </div>
+  </section>
+
+  <section class="card hidden" id="outputTestsCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Output tests (non-security)</h2>
+    <p class="small muted">Tests do not arm or disarm the system. Tests stop automatically.</p>
+    <div class="row">
+      <div class="two">
+        <button id="btnTestHorn">Test horn (5s)</button>
+        <button id="btnTestLight">Test light (5s)</button>
+      </div>
+      <button id="btnTestStop">Stop tests</button>
+      <p class="small muted" id="testError"></p>
+    </div>
+  </section>
+
+  <section class="card hidden" id="otaCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Firmware update</h2>
+    <p class="small muted">Uploading firmware writes to the inactive partition and reboots on success.</p>
+    <div class="row">
+      <input id="otaFile" type="file" accept=".bin" />
+      <button id="btnOtaUpload">Upload firmware</button>
+      <div class="kv"><div class="k">File</div><div class="v" id="otaFileName">—</div></div>
+      <div class="kv"><div class="k">Size</div><div class="v" id="otaFileSize">—</div></div>
+      <div class="kv"><div class="k">Result</div><div class="v" id="otaResult">—</div></div>
+    </div>
+  </section>
+
+  <section class="card" id="configCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Config</h2>
+    <p class="small muted" id="configHint"></p>
+    <pre class="small" id="configJson"></pre>
   </section>
 
   <section class="card" id="wizardCard">
@@ -71,35 +129,27 @@
     </div>
   </section>
 
-  <section class="card" id="controlsCard">
-    <h2 style="font-size:16px;margin:0 0 8px 0;">Controls</h2>
-    <p class="small muted" id="controlsHint"></p>
-    <div class="row">
-      <button id="btnArm">Arm</button>
-      <button id="btnDisarm">Disarm</button>
-      <button id="btnSilence">Silence</button>
-      <p class="small muted" id="controlsError"></p>
+  <section class="card" id="diagnosticsCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Diagnostics</h2>
+    <div class="row" id="diagnostics">
+      <div class="kv"><div class="k">Firmware</div><div class="v" id="fw">—</div></div>
+      <div class="kv"><div class="k">Device</div><div class="v" id="dev">—</div></div>
+      <div class="kv"><div class="k">Reset reason</div><div class="v" id="resetReason">—</div></div>
+      <div class="kv"><div class="k">Setup</div><div class="v" id="setup">—</div></div>
+      <div class="kv"><div class="k">Flash UI assets</div><div class="v" id="fs">—</div></div>
+      <div class="kv"><div class="k">RTC</div><div class="v" id="rtc">—</div></div>
+      <div class="kv"><div class="k">Time</div><div class="v" id="now">—</div></div>
+      <div class="kv"><div class="k">Storage backend</div><div class="v" id="storageBackend">—</div></div>
     </div>
   </section>
 
-  <section class="card hidden" id="outputTestsCard">
-    <h2 style="font-size:16px;margin:0 0 8px 0;">Output tests (non-security)</h2>
-    <p class="small muted">Tests do not arm or disarm the system. Tests stop automatically.</p>
+  <section class="card" id="maintenanceCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Maintenance</h2>
     <div class="row">
-      <div class="two">
-        <button id="btnTestHorn">Test horn (5s)</button>
-        <button id="btnTestLight">Test light (5s)</button>
-      </div>
-      <button id="btnTestStop">Stop tests</button>
-      <p class="small muted" id="testError"></p>
-    </div>
-  </section>
-
-  <section class="card" id="adminCard">
-    <h2 style="font-size:16px;margin:0 0 8px 0;">Admin</h2>
-    <div class="row">
+      <div class="kv"><div class="k">Firmware</div><div class="v" id="maintFw">—</div></div>
       <div id="adminLogin" class="row">
         <label class="small">Admin password</label>
+        <p class="small muted">Admin access requires a recent Admin NFC scan.</p>
         <input id="adminPassword" type="password" autocomplete="current-password" />
         <button id="btnAdminLogin">Enter Admin Mode</button>
       </div>
@@ -114,35 +164,6 @@
         </div>
       </div>
       <p class="small muted" id="adminError"></p>
-    </div>
-  </section>
-
-  <section class="card" id="eventsCard">
-    <h2 style="font-size:16px;margin:0 0 8px 0;">Recent Events</h2>
-    <div class="row" id="events"></div>
-  </section>
-
-  <section class="card" id="logsCard">
-    <h2 style="font-size:16px;margin:0 0 8px 0;">Download logs</h2>
-    <div class="row">
-      <div class="two">
-        <button id="btnLogsToday">Today</button>
-        <button id="btnLogs7d">Last 7 days</button>
-      </div>
-      <button id="btnLogsAll">All (may be limited)</button>
-      <p class="small muted" id="logsError"></p>
-    </div>
-  </section>
-
-  <section class="card hidden" id="otaCard">
-    <h2 style="font-size:16px;margin:0 0 8px 0;">Firmware update</h2>
-    <p class="small muted">Uploading firmware writes to the inactive partition and reboots on success.</p>
-    <div class="row">
-      <input id="otaFile" type="file" accept=".bin" />
-      <button id="btnOtaUpload">Upload firmware</button>
-      <div class="kv"><div class="k">File</div><div class="v" id="otaFileName">—</div></div>
-      <div class="kv"><div class="k">Size</div><div class="v" id="otaFileSize">—</div></div>
-      <div class="kv"><div class="k">Result</div><div class="v" id="otaResult">—</div></div>
     </div>
   </section>
 

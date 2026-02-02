@@ -51,6 +51,71 @@
     if (el) el.textContent = txt;
   }
 
+  function asUnknown(v) {
+    if (v === undefined || v === null) return 'Unknown';
+    if (typeof v === 'string' && (v.trim() === '' || v === 'u')) return 'Unknown';
+    return v;
+  }
+
+  function adminModeText() {
+    if (state.adminMode === 'eligible') {
+      return `Admin: Eligible (${state.adminRemainingS}s)`;
+    }
+    if (state.adminMode === 'authenticated') {
+      return `Admin: Authenticated (${state.adminRemainingS}s)`;
+    }
+    return 'Admin: Off';
+  }
+
+  function nfcHealthText(nfc) {
+    if (!nfc) return 'Unknown';
+    const health = nfc.health || '';
+    let label = 'Degraded';
+    if (health === 'ok') label = 'OK';
+    else if (health === 'unavailable' || health === 'disabled_cfg' || health === 'disabled_build') label = 'Unavailable';
+    const prov = (nfc.provisioning_active === true) ? 'Yes' : (nfc.provisioning_active === false ? 'No' : 'Unknown');
+    return `${label} (Provisioning enabled: ${prov})`;
+  }
+
+  function storageStatusText(storage) {
+    if (!storage) return 'Unknown';
+    const status = storage.status || storage.sd_status || '';
+    if (status === 'OK') return 'SD OK';
+    if (storage.fallback_active) return 'SD Missing (Using Flash Fallback)';
+    if (status.length) return `SD ${status}`;
+    return 'Unknown';
+  }
+
+  function networkText(j) {
+    const mode = j.wifi_mode || '';
+    const ip = j.ip || '';
+    if (!mode && !ip) return 'Unknown';
+    let out = mode.length ? mode : 'Unknown';
+    if (mode === 'STA' && j.wifi_ssid) out += ` (${j.wifi_ssid})`;
+    if (ip.length) out += ` — ${ip}`;
+    return out;
+  }
+
+  async function refreshConfig() {
+    if (!state.adminActive) {
+      setText('configHint', 'Config is available in Admin mode.');
+      setText('configJson', '');
+      return;
+    }
+    const r = await jget('/api/config');
+    if (!r.ok) {
+      setText('configHint', 'Config unavailable.');
+      setText('configJson', '');
+      return;
+    }
+    setText('configHint', '');
+    try {
+      setText('configJson', JSON.stringify(r.json, null, 2));
+    } catch (e) {
+      setText('configJson', '');
+    }
+  }
+
   function renderWizardFields(step) {
     const host = $('wizFields');
     host.innerHTML = '';
@@ -175,32 +240,56 @@
     state.adminRemainingS = j.admin_mode_remaining_s || 0;
     state.adminActive = state.adminMode === 'authenticated';
 
-    setText('wifiMode', j.wifi_mode || '—');
-    setText('ip', j.ip || '—');
-    setText('fw', `${j.firmware_name || ''} ${j.firmware_version || ''}`.trim() || '—');
-    setText('dev', j.device_suffix ? `…${j.device_suffix}` : '—');
-    setText('fs', j.flash_fs_ok ? 'OK' : 'MISSING');
+    const fw = `${j.firmware_name || ''} ${j.firmware_version || ''}`.trim();
+    setText('fw', fw.length ? fw : 'Unknown');
+    setText('dev', j.device_suffix ? `…${j.device_suffix}` : 'Unknown');
+    setText('maintFw', fw.length ? fw : 'Unknown');
+    setText('resetReason', asUnknown(j.reset_reason));
+    setText('state', asUnknown(j.state));
+
+    const lt = j.last_transition || {};
+    const reason = asUnknown(lt.reason);
+    const ts = (lt.time_valid && lt.ts && lt.ts !== 'u') ? lt.ts : 'Unknown';
+    setText('lastChange', `${reason} — ${ts}`);
 
     const t = j.time || {};
-    setText('rtc', t.status || '—');
-    setText('now', t.now_iso8601_utc || '—');
+    const timeValid = t.time_valid === true;
+    setText('timeStatus', timeValid ? 'Valid' : 'Unknown');
+    setText('timeHelper', timeValid ? '' : 'Timestamps may be unavailable until RTC is set.');
+    setText('rtc', asUnknown(t.status));
+    setText('now', asUnknown(t.now_iso8601_utc));
+
+    setText('network', networkText(j));
 
     const s = j.storage || {};
-    let sd = s.status || '—';
-    if (s.sd_mounted && typeof s.free_mb === 'number') {
-      sd = `${sd} (${s.free_mb} MB free)`;
+    setText('storageStatus', storageStatusText(s));
+    setText('storageBackend', asUnknown(s.active_backend));
+    if (typeof j.flash_fs_ok === 'boolean') {
+      setText('fs', j.flash_fs_ok ? 'OK' : 'Missing');
+    } else {
+      setText('fs', 'Unknown');
     }
-    setText('sd', sd);
-    setText('state', j.state || '—');
+
+    const nfc = j.nfc || null;
+    setText('nfcStatus', nfcHealthText(nfc));
+    if (nfc && nfc.lockout_active) {
+      const rem = (nfc.lockout_remaining_s !== undefined) ? nfc.lockout_remaining_s : '';
+      setText('lockout', rem !== '' ? `Active (${rem}s)` : 'Active');
+    } else if (nfc) {
+      setText('lockout', 'None');
+    } else {
+      setText('lockout', 'Unknown');
+    }
 
     setText('setup', state.setupRequired ? `REQUIRED (${state.lastStep})` : 'COMPLETE');
-    let adminText = 'OFF';
-    if (state.adminMode === 'eligible') {
-      adminText = `ELIGIBLE (${state.adminRemainingS}s)`;
-    } else if (state.adminMode === 'authenticated') {
-      adminText = `AUTHENTICATED (${state.adminRemainingS}s)`;
+    setText('admin', adminModeText());
+    if (j.state === 'TRIGGERED') {
+      setText('stateHelper', 'Alarm is latched until cleared by Admin.');
+    } else if (j.state === 'FAULT') {
+      setText('stateHelper', 'Some guarantees may be reduced. Review faults below.');
+    } else {
+      setText('stateHelper', '');
     }
-    setText('admin', adminText);
 
     $('wizStep').value = state.lastStep;
     renderWizardFields($('wizStep').value);
@@ -211,9 +300,12 @@
     setHidden($('adminActive'), !state.adminActive);
     setHidden($('otaCard'), !state.adminActive);
     setHidden($('outputTestsCard'), !state.adminActive);
+    setHidden($('logsCard'), !state.adminActive);
 
-    setText('controlsHint', j.state_machine_active ? '' : 'Not active in M1 (stub).');
+    setText('controlsHint', state.adminActive ? '' : 'Controls are available in Admin mode.');
     setText('topNote', state.setupRequired ? 'Setup required.' : '');
+
+    await refreshConfig();
   }
 
   async function refreshEvents() {
@@ -225,7 +317,7 @@
     for (const e of events) {
       const div = document.createElement('div');
       div.className = 'small';
-      const ts = e.ts || '';
+      const ts = asUnknown(e.ts);
       const sev = e.severity || '';
       const src = e.source || '';
       const msg = e.msg || '';
