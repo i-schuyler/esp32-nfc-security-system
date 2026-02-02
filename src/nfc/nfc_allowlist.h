@@ -1,9 +1,25 @@
 // src/nfc/nfc_allowlist.h
-// Role: NFC allowlist storage interface (stub in M1).
+// Role: NFC allowlist storage interface (M6 slice 1).
 #pragma once
+
+#include <Arduino.h>
 
 class WssEventLogger;
 
-// M1 stub: allowlist persistence and provisioning arrive in later milestones.
+enum WssNfcRole {
+  WSS_NFC_ROLE_UNKNOWN = 0,
+  WSS_NFC_ROLE_ADMIN = 1,
+  WSS_NFC_ROLE_USER = 2,
+};
+
+// M6: per-device-salted, non-reversible tag identifier.
+String wss_nfc_taghash(const uint8_t* uid, size_t uid_len);
+
+// Allowlist queries (provisioning arrives later).
+bool wss_nfc_allowlist_is_allowed(const String& taghash);
+WssNfcRole wss_nfc_allowlist_get_role(const String& taghash);
+const char* wss_nfc_role_to_string(WssNfcRole role);
+
+// Allowlist persistence and provisioning arrive in later milestones.
 // This hook exists so Factory Restore can explicitly clear allowlist state.
 void wss_nfc_allowlist_factory_reset(WssEventLogger& log);

@@ -20,6 +20,9 @@ struct WssNfcStatus {
   bool reader_present = false;    // best-effort (true only if reader init succeeds)
   String health;                  // ok|disabled_cfg|disabled_build|unavailable
   String driver;                  // stub|none (driver name later)
+  String last_role;               // admin|user|unknown
+  String last_scan_result;        // ok|fail
+  String last_scan_reason;        // allowlist_match|allowlist_unknown|reader_unavailable|uid_invalid
   uint32_t last_scan_ms = 0;
   uint32_t last_scan_ok_ms = 0;
   uint32_t last_scan_fail_ms = 0;
@@ -29,5 +32,6 @@ struct WssNfcStatus {
 
 void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log);
 void wss_nfc_loop();
+void wss_nfc_on_uid(const uint8_t* uid, size_t uid_len);
 WssNfcStatus wss_nfc_status();
 void wss_nfc_write_status_json(JsonObject out);
