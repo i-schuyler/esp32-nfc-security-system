@@ -99,10 +99,26 @@ V1 requirement:
 
 **Goal:** a calm, step-by-step setup initiated in the web UI that prevents half-configured installs.
 
+### Routing + gating (M7.1)
+- Setup Wizard is served at `/setup` (separate page in the UI).
+- UI gating uses existing backend status flag: `setup_required` (from `GET /api/status`).
+- If `setup_required == true`:
+  - Visiting `/` redirects to `/setup`.
+  - Visiting any other UI route redirects to `/setup`.
+  - Visiting `/setup` never redirects away from `/setup` (loop protection).
+  - `/setup` shows a Mode C "why you're here" message with an explicit reason and next step.
+    Example (PENDING APPROVAL): "Setup is required because this device is not fully configured yet. Complete the steps below to make it ready for use."
+- If `setup_required == false`:
+  - `/` is the default landing page.
+  - `/setup` renders a read-only "Setup completed" view; sensitive fields are hidden.
+  - Re-run setup requires **Admin Authenticated** (not merely Admin Eligible).
+  - `/setup` provides a "Re-run setup" button; when not Admin Authenticated, show a locked state with helper text.
+
 ### Wizard entry rules
-- On first boot (or after factory restore), UI loads directly into **Setup Wizard**.
-- Wizard completion status is stored as `setup_completed=true`.
-- User can re-run wizard at any time (Admin only), or edit specific sections without re-running the entire wizard.
+- On first boot (or after factory restore), `setup_required` is true and UI loads directly into **Setup Wizard**.
+- Wizard completion status is stored in config (see `Configuration_Registry_v1_0.md`) and exposed as `setup_required`.
+- `setup_last_step` (when present) is used to resume or highlight the next step.
+- User can re-run wizard at any time (Admin Authenticated only), or edit specific sections without re-running the entire wizard.
 
 ### Wizard steps (proposed V1)
 1) **Welcome + Safety** (explains no hidden behavior; shows current state)
