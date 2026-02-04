@@ -140,6 +140,8 @@ static bool is_ui_route_path(const String& path) {
   return path.endsWith(".html");
 }
 
+static void serve_file_or_404(const String& path, const String& contentType);
+
 static void serve_setup_page() {
   if (!LittleFS.exists("/setup.html")) {
     server.send(503, "text/plain",
