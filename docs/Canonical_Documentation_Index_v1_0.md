@@ -55,6 +55,7 @@ Implementation (code) must conform to the above.
 8) Web UI Spec (includes Setup Wizard + Factory Restore)  
    - `Web_UI_Spec_v1_0.md`
    - `Web_UI_Style_Language_ModeC_v1_0.md`
+   - `/setup` routing + gating: Section 8 "Routing + gating (M7.1)" in `Web_UI_Spec_v1_0.md`
 
 9) OTA Update Contract  
    - `OTA_Update_Contract_v1_0.md`

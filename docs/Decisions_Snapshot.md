@@ -22,3 +22,10 @@ Rules:
 - [LOCKED] Lockout can be cleared early by a valid Admin scan (and is logged).
 - [LOCKED] No NFC writeback on disarm (disarm is logged only).
 - [LOCKED] Clear Alarm action requires Admin role.
+
+## D3 — 2026-02-02 — M7.1 Setup Wizard routing locks [LOCKED]
+- [LOCKED] Pre-v1 URL changes are allowed; v1 URLs freeze after M8.
+- [LOCKED] Setup gating uses existing status flag `setup_required` (no new flags).
+- [LOCKED] Setup Wizard is served at `/setup` as a separate HTML page.
+- [LOCKED] `/setup` provides a safe escape hatch (no privileged actions).
+- [LOCKED] Re-run setup requires Admin Authenticated (not merely Admin Eligible).
