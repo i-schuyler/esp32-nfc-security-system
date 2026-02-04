@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Workshop Security System — Setup</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 16px; }
+    header { margin-bottom: 16px; }
+    h1 { font-size: 20px; margin: 0 0 6px 0; }
+    .tagline { opacity: 0.85; margin: 0 0 12px 0; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 12px; margin: 10px 0; }
+    .row { display: flex; flex-direction: column; gap: 8px; }
+    .kv { display: flex; justify-content: space-between; gap: 12px; }
+    .k { font-weight: 600; }
+    .v { text-align: right; word-break: break-word; }
+    .muted { opacity: 0.75; }
+    button { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #ccc; background: #fafafa; font-size: 16px; }
+    input, select { width: 100%; padding: 10px; border-radius: 12px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
+    .hidden { display: none; }
+    .small { font-size: 13px; opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Workshop Security System</h1>
+    <p class="tagline">Calm system. Clear state. Durable logs.</p>
+    <p class="muted" id="topNote"></p>
+  </header>
+
+  <section class="card" id="wizardCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Setup Wizard</h2>
+    <p class="small" id="wizardHint"></p>
+    <div class="row">
+      <label class="small">Step</label>
+      <select id="wizStep">
+        <option value="welcome">Welcome</option>
+        <option value="network">Network</option>
+        <option value="time">Time &amp; RTC</option>
+        <option value="storage">Storage</option>
+        <option value="controls">Controls</option>
+        <option value="sensors">Sensors</option>
+        <option value="power">Power (stub)</option>
+        <option value="outputs">Outputs (stub)</option>
+        <option value="security">Security</option>
+        <option value="review">Review</option>
+      </select>
+      <div id="wizFields" class="row"></div>
+      <button id="wizSave">Save Step</button>
+      <button id="wizComplete">Complete Setup</button>
+      <p class="small muted" id="wizError"></p>
+    </div>
+  </section>
+
+  <section class="card hidden" id="setupCompleteCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Setup completed</h2>
+    <p class="small">Setup is complete. Sensitive fields are hidden.</p>
+    <button id="btnSetupRerun">Re-run setup</button>
+    <p class="small muted" id="setupRerunHint"></p>
+  </section>
+
+  <section class="card" id="diagnosticsCard">
+    <h2 style="font-size:16px;margin:0 0 8px 0;">Diagnostics</h2>
+    <p class="small muted">Read-only status to help with setup.</p>
+    <div class="row" id="diagnostics">
+      <div class="kv"><div class="k">Firmware</div><div class="v" id="fw">—</div></div>
+      <div class="kv"><div class="k">Device</div><div class="v" id="dev">—</div></div>
+      <div class="kv"><div class="k">Reset reason</div><div class="v" id="resetReason">—</div></div>
+      <div class="kv"><div class="k">Setup</div><div class="v" id="setup">—</div></div>
+      <div class="kv"><div class="k">Network</div><div class="v" id="network">—</div></div>
+      <div class="kv"><div class="k">Storage</div><div class="v" id="storageStatus">—</div></div>
+      <div class="kv"><div class="k">RTC</div><div class="v" id="rtc">—</div></div>
+      <div class="kv"><div class="k">Time</div><div class="v" id="now">—</div></div>
+    </div>
+  </section>
+
+  <script>
+    window.APP_PAGE = "setup";
+  </script>
+  <script src="/app.js"></script>
+</body>
+</html>
