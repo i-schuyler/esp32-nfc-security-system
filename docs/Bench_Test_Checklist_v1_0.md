@@ -350,6 +350,55 @@ M7.1 Admin eligibility + password (two-step, offline AP).
 - Expected: Status shows `Admin: Authenticated (<remaining>)`; admin-only sections become visible.
 - Failure signal: password alone grants admin without an eligible window, or eligible window appears without NFC.
 
+## M7.1 Addendum (M7.1) — /setup Route Gating
+
+Preconditions:
+- Device booted; UI available over AP or STA; no external internet required.
+- Ability to set `setup_required` true/false via normal setup completion state (no new flags).
+
+A) When `setup_required == true`:
+- Actions:
+  - Visit `/`.
+  - Visit `/index.html` or any other UI route (e.g., `/foo`).
+  - Visit `/setup` directly.
+  - Observe the Setup Wizard steps with missing hardware (e.g., RTC or SD absent).
+  - Call `/api/status` directly.
+- Expected:
+  - `/` and other UI routes redirect to `/setup`.
+  - `/setup` does not redirect away (loop protection).
+  - `/setup` shows a calm "why you're here" message explaining setup is required.
+  - Wizard steps display "Unknown" where hardware is missing, with guided instructions; no step is blocked.
+  - `/api/status` returns JSON (no redirect to `/setup`).
+- Failure signals:
+  - Any UI route bypasses `/setup` while setup is required.
+  - `/setup` redirects away or loops.
+  - Missing hardware blocks progress instead of showing "Unknown" with guidance.
+  - `/api/status` redirects to `/setup` or returns HTML.
+
+B) When `setup_required == false`:
+- Actions:
+  - Visit `/`.
+  - Visit `/setup`.
+  - Inspect `/setup` for sensitive fields (passwords/tokens/UID).
+  - Check re-run button state while Admin Eligible vs Admin Authenticated.
+- Expected:
+  - `/` loads the normal landing page (no redirect to `/setup`).
+  - `/setup` shows read-only "Setup completed" view.
+  - Sensitive fields are hidden (no Wi-Fi passwords, admin tokens, or raw NFC UID).
+  - "Re-run setup" is disabled/blocked unless Admin Authenticated is active.
+- Failure signals:
+  - `/` redirects to `/setup` after setup is complete.
+  - `/setup` shows editable setup fields without Admin Authenticated.
+  - Any secret or UID is visible (use [REDACTED] in test notes).
+
+C) Escape hatch:
+- Actions:
+  - From `/setup`, open the Diagnostics section.
+- Expected:
+  - Diagnostics is read-only and does not expose privileged actions.
+- Failure signals:
+  - Diagnostics allows admin actions or reveals secrets.
+
 M7.2 Admin eligibility timeout behavior.
 - Scan a valid Admin NFC tag.
 - Wait for eligibility to expire without logging in.
