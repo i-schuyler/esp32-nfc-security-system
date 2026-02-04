@@ -120,6 +120,35 @@ static void send_json(int code, const JsonDocument& doc) {
   server.send(code, "application/json", out);
 }
 
+static bool setup_required() {
+  return !(g_cfg && g_cfg->setup_completed());
+}
+
+static void send_redirect(const char* location) {
+  server.sendHeader("Location", location);
+  server.send(302, "text/plain", "Redirect");
+}
+
+static bool is_setup_path(const String& path) {
+  return path == "/setup" || path == "/setup/";
+}
+
+static bool is_ui_route_path(const String& path) {
+  if (path == "/" || path == "/index.html" || is_setup_path(path)) return true;
+  int dot = path.lastIndexOf('.');
+  if (dot < 0) return true;
+  return path.endsWith(".html");
+}
+
+static void serve_setup_page() {
+  if (!LittleFS.exists("/setup.html")) {
+    server.send(503, "text/plain",
+      "UI setup page missing in flash filesystem. Upload FS image (LittleFS) and retry.");
+    return;
+  }
+  serve_file_or_404("/setup.html", "text/html");
+}
+
 static void handle_status() {
   // M5: sensor status adds nested arrays; keep headroom.
   StaticJsonDocument<2048> doc;
@@ -1086,6 +1115,10 @@ void wss_web_begin(WssConfigStore& cfg, WssEventLogger& log) {
 
   // UI root
   server.on("/", HTTP_GET, []() {
+    if (setup_required()) {
+      send_redirect("/setup");
+      return;
+    }
     if (!wss_flash_fs_has_index()) {
       server.send(503, "text/plain",
         "UI assets missing in flash filesystem. Upload FS image (LittleFS) and retry.");
@@ -1094,11 +1127,28 @@ void wss_web_begin(WssConfigStore& cfg, WssEventLogger& log) {
     serve_file_or_404("/index.html", "text/html");
   });
 
+  // Setup Wizard page
+  server.on("/setup", HTTP_GET, []() {
+    serve_setup_page();
+  });
+
   // Static file handler (simple SPA)
   server.onNotFound([]() {
     String path = server.uri();
     if (path == "/") {
-      server.send(302, "text/plain", "Redirect");
+      send_redirect("/");
+      return;
+    }
+    if (path.startsWith("/api/")) {
+      server.send(404, "text/plain", "Not found");
+      return;
+    }
+    if (setup_required() && is_ui_route_path(path) && !is_setup_path(path)) {
+      send_redirect("/setup");
+      return;
+    }
+    if (is_setup_path(path)) {
+      serve_setup_page();
       return;
     }
     // Try exact file

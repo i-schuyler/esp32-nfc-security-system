@@ -10,6 +10,17 @@
     adminActive: false,
     adminRemainingS: 0,
   };
+  const APP_PAGE = (window.APP_PAGE || 'main');
+  const isSetupPage = APP_PAGE === 'setup';
+
+  function on(el, evt, handler) {
+    if (el) el.addEventListener(evt, handler);
+  }
+
+  function setDisabled(el, disabled) {
+    if (!el) return;
+    el.disabled = !!disabled;
+  }
 
   function hdrs() {
     const h = {
@@ -97,6 +108,7 @@
   }
 
   async function refreshConfig() {
+    if (!$('configJson')) return;
     if (!state.adminActive) {
       setText('configHint', 'Config is available in Admin mode.');
       setText('configJson', '');
@@ -291,10 +303,11 @@
       setText('stateHelper', '');
     }
 
-    $('wizStep').value = state.lastStep;
-    renderWizardFields($('wizStep').value);
-
-    setHidden($('wizardCard'), !state.setupRequired);
+    const wizStep = $('wizStep');
+    if (wizStep) {
+      wizStep.value = state.lastStep;
+      renderWizardFields(wizStep.value);
+    }
 
     setHidden($('adminLogin'), state.adminActive);
     setHidden($('adminActive'), !state.adminActive);
@@ -303,16 +316,29 @@
     setHidden($('logsCard'), !state.adminActive);
 
     setText('controlsHint', state.adminActive ? '' : 'Controls are available in Admin mode.');
-    setText('topNote', state.setupRequired ? 'Setup required.' : '');
+    if (isSetupPage) {
+      const why = 'Setup is required because this device is not fully configured yet. Complete the steps below to make it ready for use.';
+      setText('topNote', state.setupRequired ? why : 'Setup completed.');
+      setText('wizardHint', state.setupRequired ? 'Complete the steps below. Unknown values are OK until hardware is ready.' : '');
+      setHidden($('wizardCard'), !state.setupRequired);
+      setHidden($('setupCompleteCard'), state.setupRequired);
+      const canRerun = state.adminActive;
+      setDisabled($('btnSetupRerun'), !canRerun);
+      setText('setupRerunHint', canRerun ? 'Re-run setup will log changes.' : 'Admin Authenticated required to re-run setup.');
+    } else {
+      setHidden($('wizardCard'), !state.setupRequired);
+      setText('topNote', state.setupRequired ? 'Setup required.' : '');
+    }
 
     await refreshConfig();
   }
 
   async function refreshEvents() {
+    const host = $('events');
+    if (!host) return;
     const r = await jget('/api/events?limit=12');
     if (!r.ok) return;
     const events = Array.isArray(r.json) ? r.json : [];
-    const host = $('events');
     host.innerHTML = '';
     for (const e of events) {
       const div = document.createElement('div');
@@ -370,12 +396,12 @@
     setText('otaFileSize', `${file.size} bytes`);
   }
 
-  $('wizStep').addEventListener('change', () => {
+  on($('wizStep'), 'change', () => {
     renderWizardFields($('wizStep').value);
     setText('wizError', '');
   });
 
-  $('wizSave').addEventListener('click', async () => {
+  on($('wizSave'), 'click', async () => {
     setText('wizError', '');
     const step = $('wizStep').value;
     const data = {};
@@ -428,7 +454,7 @@
     await refreshEvents();
   });
 
-  $('wizComplete').addEventListener('click', async () => {
+  on($('wizComplete'), 'click', async () => {
     setText('wizError', '');
     const r = await jpost('/api/wizard/complete', {});
     if (!r.ok) {
@@ -439,7 +465,7 @@
     await refreshEvents();
   });
 
-  $('btnAdminLogin').addEventListener('click', async () => {
+  on($('btnAdminLogin'), 'click', async () => {
     setText('adminError', '');
     const pw = $('adminPassword').value || '';
     const r = await jpost('/api/admin/login', { password: pw });
@@ -453,7 +479,7 @@
     await refreshEvents();
   });
 
-  $('btnAdminLogout').addEventListener('click', async () => {
+  on($('btnAdminLogout'), 'click', async () => {
     setText('adminError', '');
     await jpost('/api/admin/logout', {});
     state.adminToken = '';
@@ -462,32 +488,32 @@
     await refreshEvents();
   });
 
-  $('btnArm').addEventListener('click', async () => {
+  on($('btnArm'), 'click', async () => {
     setText('controlsError', '');
     const r = await jpost('/api/control/arm', {});
     if (!r.ok) setText('controlsError', `Error: ${(r.json && r.json.stub) ? 'stub' : r.status}`);
     await refreshEvents();
   });
-  $('btnDisarm').addEventListener('click', async () => {
+  on($('btnDisarm'), 'click', async () => {
     setText('controlsError', '');
     const r = await jpost('/api/control/disarm', {});
     if (!r.ok) setText('controlsError', `Error: ${(r.json && r.json.stub) ? 'stub' : r.status}`);
     await refreshEvents();
   });
-  $('btnSilence').addEventListener('click', async () => {
+  on($('btnSilence'), 'click', async () => {
     setText('controlsError', '');
     const r = await jpost('/api/control/silence', {});
     if (!r.ok) setText('controlsError', `Error: ${(r.json && r.json.stub) ? 'stub' : r.status}`);
     await refreshEvents();
   });
 
-  $('btnLogsToday').addEventListener('click', async () => {
+  on($('btnLogsToday'), 'click', async () => {
     await downloadLogs('today');
   });
-  $('btnLogs7d').addEventListener('click', async () => {
+  on($('btnLogs7d'), 'click', async () => {
     await downloadLogs('7d');
   });
-  $('btnLogsAll').addEventListener('click', async () => {
+  on($('btnLogsAll'), 'click', async () => {
     await downloadLogs('all');
   });
 
@@ -502,22 +528,22 @@
     setText('testError', okMessage || 'OK');
   }
 
-  $('btnTestHorn').addEventListener('click', async () => {
+  on($('btnTestHorn'), 'click', async () => {
     await runTest('/api/test/horn', 'Horn test started.');
   });
-  $('btnTestLight').addEventListener('click', async () => {
+  on($('btnTestLight'), 'click', async () => {
     await runTest('/api/test/light', 'Light test started.');
   });
-  $('btnTestStop').addEventListener('click', async () => {
+  on($('btnTestStop'), 'click', async () => {
     await runTest('/api/test/stop', 'Tests stopped.');
   });
 
-  $('otaFile').addEventListener('change', () => {
+  on($('otaFile'), 'change', () => {
     const file = $('otaFile').files && $('otaFile').files[0];
     setOtaFileInfo(file);
   });
 
-  $('btnOtaUpload').addEventListener('click', async () => {
+  on($('btnOtaUpload'), 'click', async () => {
     const file = $('otaFile').files && $('otaFile').files[0];
     if (!file) return;
     setText('otaResult', '—');
@@ -540,20 +566,33 @@
     setText('otaResult', msg || 'Upload failed.');
   });
 
-  $('btnWizardRestart').addEventListener('click', async () => {
+  async function restartWizard() {
     // In M1, restarting is implemented as setting setup_completed=false via wizard step.
     setText('adminError', '');
+    setText('setupRerunHint', '');
     const r = await jpost('/api/wizard/step', { step: 'welcome', data: { setup_completed: false } });
     if (!r.ok) {
-      setText('adminError', `Error: ${(r.json && r.json.error) || r.status}`);
+      const msg = `Error: ${(r.json && r.json.error) || r.status}`;
+      setText('adminError', msg);
+      setText('setupRerunHint', msg);
       return;
     }
     await refreshStatus();
     await refreshEvents();
+  }
+
+  on($('btnWizardRestart'), 'click', restartWizard);
+  on($('btnSetupRerun'), 'click', async () => {
+    if (!state.adminActive) {
+      setText('setupRerunHint', 'Admin Authenticated required to re-run setup.');
+      return;
+    }
+    await restartWizard();
   });
 
   (function setupHoldFactoryRestore() {
     const btn = $('btnFactoryRestore');
+    if (!btn) return;
     let downAt = 0;
     btn.addEventListener('pointerdown', () => {
       downAt = Date.now();
