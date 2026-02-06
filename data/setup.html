@@ -34,20 +34,20 @@
     <div class="row">
       <label class="small">Step</label>
       <select id="wizStep">
-        <option value="welcome">Welcome</option>
+        <option value="welcome">Welcome + Admin Password</option>
         <option value="network">Network</option>
+        <option value="sensors">Inputs (NFC + Sensors)</option>
         <option value="time">Time &amp; RTC</option>
         <option value="storage">Storage</option>
-        <option value="controls">Controls</option>
-        <option value="sensors">Sensors</option>
-        <option value="power">Power (stub)</option>
-        <option value="outputs">Outputs (stub)</option>
-        <option value="security">Security</option>
-        <option value="review">Review</option>
+        <option value="outputs">Outputs</option>
+        <option value="review">Review &amp; Complete</option>
       </select>
       <div id="wizFields" class="row"></div>
-      <button id="wizSave">Save Step</button>
-      <button id="wizComplete">Complete Setup</button>
+      <button id="wizSave">Save step</button>
+      <button id="wizNext">Next</button>
+      <button id="wizComplete">Complete setup</button>
+      <p class="small muted" id="wizActionHint"></p>
+      <p class="small muted" id="wizCompleteHint"></p>
       <p class="small muted" id="wizError"></p>
     </div>
   </section>
