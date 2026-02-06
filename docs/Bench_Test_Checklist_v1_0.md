@@ -421,12 +421,12 @@ B) Step order (critical first).
 - Expected:
   - Step 1: Welcome + Admin Password.
   - Step 2: Network (AP password change required; SSID change optional; STA optional).
-  - Step 3: Time & RTC.
-  - Step 4: Storage.
-  - Step 5: NFC.
-  - Step 6: Sensors.
-  - Step 7: Outputs.
-  - Step 8: Review + Complete.
+  - Step 3: Inputs (NFC + Sensors).
+  - Step 4: Time & RTC.
+  - Step 5: Storage.
+  - Step 6: Outputs.
+  - Step 7: Review & Complete.
+  - Inputs step covers NFC provisioning and sensor enablement (no separate NFC step).
 - Failure signal:
   - Order differs or a critical step is missing.
 

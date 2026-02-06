@@ -142,12 +142,11 @@ A) Auto-refresh policy
 B) Step order (critical first)
 - Step 1: Welcome + Admin Password (merged) with guided operator instructions.
 - Step 2: Network; change AP password from default (required); SSID change optional; STA optional.
-- Step 3: Time & RTC.
-- Step 4: Storage.
-- Step 5: NFC.
-- Step 6: Sensors (at least one primary sensor must be enabled to complete).
-- Step 7: Outputs.
-- Step 8: Review + Complete.
+- Step 3: Inputs (NFC + Sensors); merged step with guided instructions; never blocked by missing hardware.
+- Step 4: Time & RTC.
+- Step 5: Storage.
+- Step 6: Outputs.
+- Step 7: Review & Complete.
 - Hardware steps must never be blocked by missing hardware; show "Unknown" with guided instructions.
 
 C) Navigation rules
