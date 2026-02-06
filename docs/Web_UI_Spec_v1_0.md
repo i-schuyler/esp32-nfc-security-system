@@ -117,21 +117,68 @@ V1 requirement:
 ### Wizard entry rules
 - On first boot (or after factory restore), `setup_required` is true and UI loads directly into **Setup Wizard**.
 - Wizard completion status is stored in config (see `Configuration_Registry_v1_0.md`) and exposed as `setup_required`.
-- `setup_last_step` (when present) is used to resume or highlight the next step.
+- `setup_last_step` (when present) is used to resume or highlight the next step on initial entry only.
 - User can re-run wizard at any time (Admin Authenticated only), or edit specific sections without re-running the entire wizard.
 
-### Wizard steps (proposed V1)
-1) **Welcome + Safety** (explains no hidden behavior; shows current state)
-2) **Time & RTC** (RTC detected? set timezone; verify timestamp)
-3) **Storage** (SD detected? logging status; choose retention)
-4) **Network** (set STA credentials (optional), set AP SSID/password; apply safely)
-   - AP password must be changed from the default before completing setup.
+### Wizard steps (V1, M7.2 order)
+1) **Welcome + Admin Password** (merged; guided operator instructions)
+2) **Network** (change AP password from default; SSID change optional; STA optional)
+3) **Time & RTC** (RTC detected? set timezone; verify timestamp)
+4) **Storage** (SD detected? logging status; choose retention)
 5) **NFC** (add Admin card(s), add User card(s) if desired; confirm permissions)
 6) **Sensors** (enable motion/door/tamper; basic calibration/sensitivity)
 7) **Outputs** (test horn/light; set default patterns)
-8) **Review** (shows summary; user confirms; marks setup complete)
+8) **Review + Complete** (summary + final validation; marks setup complete)
 
 All wizard actions must be logged as `config_change` or `setup_step`.
+
+### M7.2 Setup Wizard Optimization Contract (M7.2)
+
+A) Auto-refresh policy
+- Auto-refresh must never change wizard navigation or step selection.
+- Any refresh used must be read-only and must not snap back to the last-saved step.
+- Decision: remove step-mutating auto-refresh; allow minimal status refresh only if needed.
+
+B) Step order (critical first)
+- Step 1: Welcome + Admin Password (merged) with guided operator instructions.
+- Step 2: Network; change AP password from default (required); SSID change optional; STA optional.
+- Step 3: Time & RTC.
+- Step 4: Storage.
+- Step 5: NFC.
+- Step 6: Sensors (at least one primary sensor must be enabled to complete).
+- Step 7: Outputs.
+- Step 8: Review + Complete.
+- Hardware steps must never be blocked by missing hardware; show "Unknown" with guided instructions.
+
+C) Navigation rules
+- Operator can proceed through steps without being blocked by later steps.
+- "Save step" persists current step inputs and remains on the same step; it is not time-sensitive.
+- "Continue" advances to the next step after saving current inputs.
+- "Complete setup" appears only on the last step and only after all steps have been visited at least once.
+
+D) Completion requirements (LOCKED)
+- Admin password set.
+- AP password changed from default.
+- At least one primary sensor enabled.
+- Every wizard step visited at least once.
+
+E) Save vs Complete semantics (Mode C)
+- "Save step": persist current step inputs without finishing the wizard; use when pausing or waiting on hardware.
+- "Continue": advance to the next step after saving current inputs.
+- "Complete setup": final validation + mark setup completed.
+
+F) Persistence across OTA (LOCKED V1)
+- Configuration is stored in NVS and persists across OTA updates.
+- SD+NVS dual save deferred to V2.
+
+G) `/setup` routing and read-only post-completion
+- If `setup_required == true` (or `setup_completed == false`): `/` and other UI routes redirect to `/setup`; `/setup` never redirects away (loop protection).
+- If setup is complete: `/` is default; `/setup` renders read-only "Setup completed" with sensitive fields hidden.
+- Re-run setup requires Admin Authenticated; `/setup` shows a locked state when not authenticated.
+
+H) Security boundary reminders
+- `/setup` never displays secrets (Wi-Fi passwords, tokens, raw UID).
+- Re-run setup requires Admin Authenticated (not merely Admin Eligible).
 
 ## 9) Factory Restore (Admin only)
 

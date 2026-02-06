@@ -399,6 +399,84 @@ C) Escape hatch:
 - Failure signals:
   - Diagnostics allows admin actions or reveals secrets.
 
+## M7.2 Addendum (M7.2) — Setup Wizard Optimization (offline AP)
+
+Preconditions:
+- Device in AP mode; phone connected; no external internet.
+- `setup_required == true` for A–E; `setup_required == false` for F (after completion).
+
+A) No snapback / no step mutation due to refresh.
+- Actions:
+  - Open `/setup`, navigate to a mid wizard step, and click "Save step".
+  - Wait for any periodic refresh window (at least 60s), then refresh the browser.
+- Expected:
+  - Wizard remains on the current step; navigation selection does not change.
+  - Only read-only status indicators update (if present); no jump to last-saved step.
+- Failure signals:
+  - Step changes or navigation snaps back without operator action.
+
+B) Step order (critical first).
+- Actions:
+  - Inspect the step list/order.
+- Expected:
+  - Step 1: Welcome + Admin Password.
+  - Step 2: Network (AP password change required; SSID change optional; STA optional).
+  - Step 3: Time & RTC.
+  - Step 4: Storage.
+  - Step 5: NFC.
+  - Step 6: Sensors.
+  - Step 7: Outputs.
+  - Step 8: Review + Complete.
+- Failure signal:
+  - Order differs or a critical step is missing.
+
+C) Navigation not blocked by later steps.
+- Actions:
+  - Leave optional fields empty and proceed forward.
+  - Simulate missing hardware (e.g., RTC or SD absent) and proceed.
+- Expected:
+  - Operator can continue through steps without being blocked by later steps.
+  - Missing hardware shows "Unknown" with guided instructions.
+- Failure signals:
+  - Progress blocked by missing hardware or unvisited later steps.
+
+D) Complete button gating.
+- Actions:
+  - Attempt completion from a non-final step.
+  - Go to the final step without visiting every prior step.
+- Expected:
+  - "Complete setup" appears only on the last step and only after all steps have been visited.
+- Failure signals:
+  - "Complete setup" appears early or before all steps are visited.
+
+E) Completion requirements enforcement (LOCKED).
+- Actions:
+  - Attempt to complete with default admin password, default AP password, or no primary sensor enabled.
+- Expected:
+  - Completion is blocked with guided reasons; relevant `setup_step` or `config_change` logs are present (no secrets).
+- Failure signals:
+  - Completion succeeds without meeting all requirements.
+
+F) `/setup` routing behaviors and loop protection.
+- Actions:
+  - With `setup_required == true`, visit `/`, other UI routes, and `/setup`.
+  - With `setup_required == false`, visit `/` and `/setup`; check the re-run button state.
+- Expected:
+  - When setup is required: `/` and other UI routes redirect to `/setup`; `/setup` never redirects away.
+  - When setup is complete: `/` is default; `/setup` is read-only "Setup completed"; re-run requires Admin Authenticated.
+- Failure signals:
+  - Any route bypasses `/setup` when required, loop protection fails, or re-run is allowed without Admin Authenticated.
+
+G) No secrets / no UID displayed or logged.
+- Actions:
+  - Enter Wi-Fi credentials in the wizard; observe UI fields and recent event logs.
+  - Download logs if available and scan for secrets or raw UID.
+- Expected:
+  - No Wi-Fi passwords, tokens, or raw UID shown in UI or logs.
+  - Use [REDACTED] in test notes if any value is observed.
+- Failure signal:
+  - Any secret or UID appears in UI, `/api/events`, or downloaded logs.
+
 M7.2 Admin eligibility timeout behavior.
 - Scan a valid Admin NFC tag.
 - Wait for eligibility to expire without logging in.
