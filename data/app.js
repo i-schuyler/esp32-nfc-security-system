@@ -9,9 +9,155 @@
     adminMode: 'off',
     adminActive: false,
     adminRemainingS: 0,
+    wizInitialized: false,
   };
   const APP_PAGE = (window.APP_PAGE || 'main');
   const isSetupPage = APP_PAGE === 'setup';
+  const WIZARD_STEPS = [
+    { id: 'welcome', label: 'Welcome + Admin Password' },
+    { id: 'network', label: 'Network' },
+    { id: 'sensors', label: 'Inputs (NFC + Sensors)' },
+    { id: 'time', label: 'Time & RTC' },
+    { id: 'storage', label: 'Storage' },
+    { id: 'outputs', label: 'Outputs' },
+    { id: 'review', label: 'Review & Complete' },
+  ];
+  const WIZARD_STEP_IDS = WIZARD_STEPS.map((step) => step.id);
+  const WIZARD_VISITED_KEY = 'wss_setup_visited_steps_v1';
+  const WIZARD_STEP_TOUCHED_KEY = 'wss_setup_step_touched_v1';
+  const WIZARD_ADMIN_PW_SET_KEY = 'wss_setup_admin_pw_set_v1';
+  const WIZARD_AP_PW_SET_KEY = 'wss_setup_ap_pw_set_v1';
+  const WIZARD_SENSOR_SET_KEY = 'wss_setup_primary_sensor_enabled_v1';
+  const WIZARD_STEP_ALIAS = {
+    security: 'welcome',
+    nfc: 'sensors',
+    controls: 'sensors',
+    power: 'outputs',
+  };
+
+  function getBool(key) {
+    return localStorage.getItem(key) === '1';
+  }
+
+  function setBool(key, value) {
+    if (value) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
+  }
+
+  function loadVisitedSteps() {
+    const raw = localStorage.getItem(WIZARD_VISITED_KEY) || '[]';
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed);
+    } catch (e) {}
+    return new Set();
+  }
+
+  const visitedSteps = loadVisitedSteps();
+
+  function markStepVisited(step) {
+    if (!WIZARD_STEP_IDS.includes(step)) return;
+    visitedSteps.add(step);
+    localStorage.setItem(WIZARD_VISITED_KEY, JSON.stringify(Array.from(visitedSteps)));
+  }
+
+  function hasVisitedAllSteps() {
+    return WIZARD_STEP_IDS.every((step) => visitedSteps.has(step));
+  }
+
+  function setStepTouched() {
+    setBool(WIZARD_STEP_TOUCHED_KEY, true);
+  }
+
+  function stepTouched() {
+    return getBool(WIZARD_STEP_TOUCHED_KEY);
+  }
+
+  function normalizeStep(step) {
+    if (WIZARD_STEP_IDS.includes(step)) return step;
+    if (WIZARD_STEP_ALIAS[step]) return WIZARD_STEP_ALIAS[step];
+    return WIZARD_STEP_IDS[0];
+  }
+
+  function isNonDefaultApPassword(pw) {
+    if (!pw || pw.length < 8) return false;
+    return !pw.startsWith('ChangeMe-');
+  }
+
+  function updateAdminPasswordFlag(onlySetTrue) {
+    const pw = $('wiz_admin_password');
+    const ok = !!(pw && pw.value && pw.value.length >= 8);
+    if (ok) setBool(WIZARD_ADMIN_PW_SET_KEY, true);
+    else if (!onlySetTrue) setBool(WIZARD_ADMIN_PW_SET_KEY, false);
+  }
+
+  function updateApPasswordFlag(onlySetTrue) {
+    const pw = $('wiz_ap_password');
+    const ok = !!(pw && isNonDefaultApPassword(pw.value || ''));
+    if (ok) setBool(WIZARD_AP_PW_SET_KEY, true);
+    else if (!onlySetTrue) setBool(WIZARD_AP_PW_SET_KEY, false);
+  }
+
+  function updatePrimarySensorFlag(onlySetTrue) {
+    const motion = $('wiz_motion_enabled');
+    const door = $('wiz_door_enabled');
+    const ok = !!((motion && motion.checked) || (door && door.checked));
+    if (ok) setBool(WIZARD_SENSOR_SET_KEY, true);
+    else if (!onlySetTrue) setBool(WIZARD_SENSOR_SET_KEY, false);
+  }
+
+  function completionStatus() {
+    return {
+      adminPasswordSet: getBool(WIZARD_ADMIN_PW_SET_KEY),
+      apPasswordSet: getBool(WIZARD_AP_PW_SET_KEY),
+      primarySensorEnabled: getBool(WIZARD_SENSOR_SET_KEY),
+      allVisited: hasVisitedAllSteps(),
+    };
+  }
+
+  function updateWizardActions() {
+    const stepEl = $('wizStep');
+    if (!stepEl) return;
+    const current = normalizeStep(stepEl.value);
+    const isLast = current === WIZARD_STEP_IDS[WIZARD_STEP_IDS.length - 1];
+    const status = completionStatus();
+    const canComplete = isLast && status.allVisited
+      && status.adminPasswordSet && status.apPasswordSet && status.primarySensorEnabled;
+    setHidden($('wizComplete'), !canComplete);
+
+    if (!$('wizCompleteHint')) return;
+    if (!isLast) {
+      setText('wizCompleteHint', 'Complete setup is available on the last step.');
+      return;
+    }
+    const missing = [];
+    if (!status.allVisited) missing.push('visit all steps');
+    if (!status.adminPasswordSet) missing.push('set admin password');
+    if (!status.apPasswordSet) missing.push('change AP password from default');
+    if (!status.primarySensorEnabled) missing.push('enable a primary sensor');
+    setText('wizCompleteHint', missing.length ? `To complete: ${missing.join(', ')}.` : '');
+  }
+
+  function setWizardStep(step, opts) {
+    const stepEl = $('wizStep');
+    if (!stepEl) return;
+    const normalized = normalizeStep(step);
+    stepEl.value = normalized;
+    if (opts && opts.touched) setStepTouched();
+    renderWizardFields(normalized);
+    markStepVisited(normalized);
+    state.wizInitialized = true;
+    updateWizardActions();
+  }
+
+  function goToNextWizardStep() {
+    const stepEl = $('wizStep');
+    if (!stepEl) return;
+    const current = normalizeStep(stepEl.value);
+    const idx = WIZARD_STEP_IDS.indexOf(current);
+    if (idx < 0 || idx >= WIZARD_STEP_IDS.length - 1) return;
+    setWizardStep(WIZARD_STEP_IDS[idx + 1], { touched: true });
+  }
 
   function on(el, evt, handler) {
     if (el) el.addEventListener(evt, handler);
@@ -170,8 +316,14 @@
     }
 
     if (step === 'welcome') {
-      addLabel('Wizard required until completion.');
-      addLabel('Passwords are never logged.');
+      addLabel('Setup is required until all steps are completed.');
+      addLabel('Set the admin password to protect changes.');
+      addInput('wiz_admin_password', 'Admin password (min 8)', 'password');
+      addInput('wiz_admin_timeout', 'Admin mode timeout (seconds)', 'number', '600');
+      addLabel('Passwords are never shown or logged.');
+      const pw = $('wiz_admin_password');
+      if (pw) pw.addEventListener('input', () => { updateAdminPasswordFlag(); updateWizardActions(); });
+      updateAdminPasswordFlag(true);
       return;
     }
 
@@ -181,62 +333,58 @@
       addInput('wiz_sta_password', 'STA Password', 'password');
       addInput('wiz_ap_password', 'AP Password (min 8)', 'password');
       addLabel('AP password must be changed from the default to complete setup.');
+      const ap = $('wiz_ap_password');
+      if (ap) ap.addEventListener('input', () => { updateApPasswordFlag(); updateWizardActions(); });
+      updateApPasswordFlag(true);
       return;
     }
 
     if (step === 'time') {
-      addLabel('Time / RTC (best-effort).');
+      addLabel('Accurate timestamps improve logs and incident history.');
+      addLabel('Set timezone and confirm RTC is detected.');
       addInput('wiz_timezone', 'Timezone (IANA name)', 'text', 'America/Los_Angeles');
       addCheckbox('wiz_set_time_now', 'Set device time to browser time');
-      addLabel('If an RTC is present and configured, it will be adjusted.');
+      addLabel('RTC: Unknown until detected.');
       return;
     }
 
     if (step === 'storage') {
-      addLabel('Storage and log retention.');
+      addLabel('Logs are stored on SD when available.');
       addCheckbox('wiz_sd_required', 'Require SD for normal operation');
       addInput('wiz_log_retention_days', 'Log retention (days)', 'number', '365');
-      return;
-    }
-
-    if (step === 'controls') {
-      addCheckbox('wiz_web_enabled', 'Enable Web UI controls');
-      addCheckbox('wiz_nfc_enabled', 'Enable NFC controls (stub)');
+      addLabel('SD: Unknown until detected.');
       return;
     }
 
     if (step === 'sensors') {
+      addLabel('Inputs detect activity and authorize control.');
+      addLabel('Enable at least one primary sensor.');
+      addLabel('NFC: Unknown until a reader is detected.');
+      addLabel('Sensors: Unknown until configured.');
       addCheckbox('wiz_motion_enabled', 'Motion sensor enabled');
       addCheckbox('wiz_door_enabled', 'Door/window sensor enabled');
       addLabel('At least one primary sensor must be enabled to complete setup.');
-      return;
-    }
-
-    if (step === 'power') {
-      addLabel('Power settings (stub in M1).');
-      addCheckbox('wiz_batt_measure', 'Battery measurement enabled');
-      addInput('wiz_batt_low', 'Battery low voltage', 'number', '0');
-      addInput('wiz_batt_crit', 'Battery critical voltage', 'number', '0');
-      addInput('wiz_batt_wifi', 'Battery Wi‑Fi disable voltage', 'number', '0');
+      addLabel('Control interfaces (optional).');
+      addCheckbox('wiz_web_enabled', 'Enable Web UI controls');
+      addCheckbox('wiz_nfc_enabled', 'Enable NFC controls');
+      const motion = $('wiz_motion_enabled');
+      const door = $('wiz_door_enabled');
+      if (motion) motion.addEventListener('change', () => { updatePrimarySensorFlag(); updateWizardActions(); });
+      if (door) door.addEventListener('change', () => { updatePrimarySensorFlag(); updateWizardActions(); });
+      updatePrimarySensorFlag(true);
       return;
     }
 
     if (step === 'outputs') {
-      addLabel('Outputs settings (stub patterns in M1).');
+      addLabel('Outputs define alert behavior.');
       addCheckbox('wiz_horn_enabled', 'Horn enabled');
       addCheckbox('wiz_light_enabled', 'Light enabled');
       return;
     }
 
-    if (step === 'security') {
-      addInput('wiz_admin_password', 'Admin password (min 8)', 'password');
-      addInput('wiz_admin_timeout', 'Admin mode timeout (seconds)', 'number', '600');
-      return;
-    }
-
     if (step === 'review') {
-      addLabel('Review and complete setup.');
-      addLabel('State machine and real controls are not active in M1.');
+      addLabel('Review settings and complete setup.');
+      addLabel('Final validation happens on the device.');
       return;
     }
   }
@@ -247,7 +395,7 @@
     const j = r.json || {};
 
     state.setupRequired = !!j.setup_required;
-    state.lastStep = j.setup_last_step || 'welcome';
+    state.lastStep = normalizeStep(j.setup_last_step || 'welcome');
     state.adminMode = j.admin_mode || (j.admin_mode_active ? 'authenticated' : 'off');
     state.adminRemainingS = j.admin_mode_remaining_s || 0;
     state.adminActive = state.adminMode === 'authenticated';
@@ -293,7 +441,9 @@
       setText('lockout', 'Unknown');
     }
 
-    setText('setup', state.setupRequired ? `REQUIRED (${state.lastStep})` : 'COMPLETE');
+    const stepLabel = WIZARD_STEPS.find((step) => step.id === state.lastStep);
+    const setupStepText = stepLabel ? stepLabel.label : state.lastStep;
+    setText('setup', state.setupRequired ? `REQUIRED (${setupStepText})` : 'COMPLETE');
     setText('admin', adminModeText());
     if (j.state === 'TRIGGERED') {
       setText('stateHelper', 'Alarm is latched until cleared by Admin.');
@@ -304,9 +454,13 @@
     }
 
     const wizStep = $('wizStep');
-    if (wizStep) {
-      wizStep.value = state.lastStep;
-      renderWizardFields(wizStep.value);
+    if (wizStep && isSetupPage) {
+      if (!state.wizInitialized) {
+        const initialStep = stepTouched() ? wizStep.value : state.lastStep;
+        setWizardStep(initialStep);
+      } else {
+        updateWizardActions();
+      }
     }
 
     setHidden($('adminLogin'), state.adminActive);
@@ -320,6 +474,7 @@
       const why = 'Setup is required because this device is not fully configured yet. Complete the steps below to make it ready for use.';
       setText('topNote', state.setupRequired ? why : 'Setup completed.');
       setText('wizardHint', state.setupRequired ? 'Complete the steps below. Unknown values are OK until hardware is ready.' : '');
+      setText('wizActionHint', state.setupRequired ? 'Save step stores current inputs. Next moves to the next step. Complete setup appears on the last step after all steps are visited.' : '');
       setHidden($('wizardCard'), !state.setupRequired);
       setHidden($('setupCompleteCard'), state.setupRequired);
       const canRerun = state.adminActive;
@@ -397,8 +552,13 @@
   }
 
   on($('wizStep'), 'change', () => {
-    renderWizardFields($('wizStep').value);
+    setWizardStep($('wizStep').value, { touched: true });
     setText('wizError', '');
+  });
+
+  on($('wizNext'), 'click', () => {
+    setText('wizError', '');
+    goToNextWizardStep();
   });
 
   on($('wizSave'), 'click', async () => {
@@ -406,11 +566,17 @@
     const step = $('wizStep').value;
     const data = {};
 
+    if (step === 'welcome') {
+      data.admin_web_password = $('wiz_admin_password').value || '';
+      data.admin_mode_timeout_s = parseInt($('wiz_admin_timeout').value || '600', 10) || 600;
+      updateAdminPasswordFlag();
+    }
     if (step === 'network') {
       data.wifi_sta_enabled = !!$('wiz_sta_enabled').checked;
       data.wifi_sta_ssid = $('wiz_sta_ssid').value || '';
       data.wifi_sta_password = $('wiz_sta_password').value || '';
       data.wifi_ap_password = $('wiz_ap_password').value || '';
+      updateApPasswordFlag();
     }
     if (step === 'time') {
       data.timezone = $('wiz_timezone').value || '';
@@ -422,27 +588,16 @@
       data.sd_required = !!$('wiz_sd_required').checked;
       data.log_retention_days = parseInt($('wiz_log_retention_days').value || '365', 10) || 365;
     }
-    if (step === 'controls') {
-      data.control_web_enabled = !!$('wiz_web_enabled').checked;
-      data.control_nfc_enabled = !!$('wiz_nfc_enabled').checked;
-    }
     if (step === 'sensors') {
       data.motion_enabled = !!$('wiz_motion_enabled').checked;
       data.door_enabled = !!$('wiz_door_enabled').checked;
-    }
-    if (step === 'power') {
-      data.battery_measure_enabled = !!$('wiz_batt_measure').checked;
-      data.battery_low_v = parseFloat($('wiz_batt_low').value || '0') || 0;
-      data.battery_critical_v = parseFloat($('wiz_batt_crit').value || '0') || 0;
-      data.battery_wifi_disable_v = parseFloat($('wiz_batt_wifi').value || '0') || 0;
+      if ($('wiz_web_enabled')) data.control_web_enabled = !!$('wiz_web_enabled').checked;
+      if ($('wiz_nfc_enabled')) data.control_nfc_enabled = !!$('wiz_nfc_enabled').checked;
+      updatePrimarySensorFlag();
     }
     if (step === 'outputs') {
       data.horn_enabled = !!$('wiz_horn_enabled').checked;
       data.light_enabled = !!$('wiz_light_enabled').checked;
-    }
-    if (step === 'security') {
-      data.admin_web_password = $('wiz_admin_password').value || '';
-      data.admin_mode_timeout_s = parseInt($('wiz_admin_timeout').value || '600', 10) || 600;
     }
 
     const r = await jpost('/api/wizard/step', { step, data });
