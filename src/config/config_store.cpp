@@ -11,6 +11,23 @@
 
 static const char* kPrefsNamespace = "wss";
 static const char* kPrefsKeyCfg = "cfg_json";
+static const char* kPrefsKeyCfgChunks = "cfg_chunks";
+static const char* kPrefsKeyCfgChunkPrefix = "cfg_chunk_";
+static const size_t kCfgSingleMaxBytes = 1800;
+static const size_t kCfgChunkBytes = 1024;
+static const uint32_t kCfgChunkMax = 16;
+
+static String cfg_chunk_key(uint32_t idx) {
+  return String(kPrefsKeyCfgChunkPrefix) + String(idx);
+}
+
+static void clear_cfg_chunks(Preferences& prefs, uint32_t count) {
+  for (uint32_t i = 0; i < count; i++) {
+    String key = cfg_chunk_key(i);
+    prefs.remove(key.c_str());
+  }
+  prefs.remove(kPrefsKeyCfgChunks);
+}
 
 static bool json_equals(const JsonVariantConst& a, const JsonVariantConst& b) {
   if (a.isNull() && b.isNull()) return true;
@@ -51,10 +68,34 @@ bool WssConfigStore::load(String& err) {
     err = "prefs_begin_failed";
     set_defaults();
     save(err); // best-effort
+    if (_logger) {
+      StaticJsonDocument<128> extra;
+      extra["reason"] = err;
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      _logger->log_warn("config", "cfg_load_missing", "config load missing", &o);
+    }
     return false;
   }
 
-  String cfg = prefs.getString(kPrefsKeyCfg, "");
+  String cfg;
+  bool used_chunked = false;
+  uint32_t chunk_count = prefs.getUInt(kPrefsKeyCfgChunks, 0);
+  if (chunk_count > 0 && chunk_count <= kCfgChunkMax) {
+    for (uint32_t i = 0; i < chunk_count; i++) {
+      String key = cfg_chunk_key(i);
+      String part = prefs.getString(key.c_str(), "");
+      if (part.length() == 0) {
+        cfg = "";
+        break;
+      }
+      cfg += part;
+    }
+    if (cfg.length() > 0) used_chunked = true;
+  }
+
+  if (!used_chunked) {
+    cfg = prefs.getString(kPrefsKeyCfg, "");
+  }
   prefs.end();
 
   if (cfg.length() == 0) {
@@ -62,6 +103,7 @@ bool WssConfigStore::load(String& err) {
     String save_err;
     save(save_err); // best-effort
     if (_logger) _logger->log_info("config", "config_defaults_created", "no_existing_config");
+    if (_logger) _logger->log_warn("config", "cfg_load_missing", "config load missing");
     err = "";
     return true;
   }
@@ -75,6 +117,12 @@ bool WssConfigStore::load(String& err) {
     String save_err;
     save(save_err);
     if (_logger) _logger->log_error("config", "config_corrupt_recovered", err);
+    if (_logger) {
+      StaticJsonDocument<128> extra;
+      extra["reason"] = "deserialize_failed";
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      _logger->log_warn("config", "cfg_load_missing", "config load missing", &o);
+    }
     err = "";
     return true;
   }
@@ -85,10 +133,17 @@ bool WssConfigStore::load(String& err) {
     String save_err;
     save(save_err);
     if (_logger) _logger->log_error("config", "config_invalid_recovered", err);
+    if (_logger) {
+      StaticJsonDocument<128> extra;
+      extra["reason"] = "validate_failed";
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      _logger->log_warn("config", "cfg_load_missing", "config load missing", &o);
+    }
     err = "";
     return true;
   }
 
+  if (_logger) _logger->log_info("config", "cfg_load_ok", "config load ok");
   err = "";
   return true;
 }
@@ -449,8 +504,60 @@ bool WssConfigStore::save(String& err) {
   }
 
   String out;
-  serializeJson(_doc, out);
-  bool ok = prefs.putString(kPrefsKeyCfg, out) > 0;
+  size_t written = serializeJson(_doc, out);
+  if (written == 0 || out.length() == 0) {
+    prefs.end();
+    err = "serialize_failed";
+    return false;
+  }
+
+  bool ok = false;
+  if (out.length() <= kCfgSingleMaxBytes) {
+    ok = prefs.putString(kPrefsKeyCfg, out) > 0;
+    if (ok) {
+      uint32_t prior_chunks = prefs.getUInt(kPrefsKeyCfgChunks, 0);
+      if (prior_chunks > 0) clear_cfg_chunks(prefs, prior_chunks);
+    }
+  }
+
+  if (!ok) {
+    uint32_t chunk_count = (out.length() + kCfgChunkBytes - 1) / kCfgChunkBytes;
+    if (chunk_count == 0 || chunk_count > kCfgChunkMax) {
+      prefs.end();
+      err = "cfg_too_large";
+      return false;
+    }
+
+    uint32_t prior_chunks = prefs.getUInt(kPrefsKeyCfgChunks, 0);
+    prefs.putUInt(kPrefsKeyCfgChunks, 0);
+    bool chunk_ok = true;
+    for (uint32_t i = 0; i < chunk_count; i++) {
+      size_t start = i * kCfgChunkBytes;
+      size_t end = start + kCfgChunkBytes;
+      if (end > out.length()) end = out.length();
+      String part = out.substring(start, end);
+      String key = cfg_chunk_key(i);
+      if (prefs.putString(key.c_str(), part) == 0) {
+        chunk_ok = false;
+        break;
+      }
+    }
+    if (chunk_ok) {
+      if (prefs.putUInt(kPrefsKeyCfgChunks, chunk_count) == 0) {
+        chunk_ok = false;
+      }
+    }
+    if (chunk_ok) {
+      prefs.remove(kPrefsKeyCfg);
+      if (prior_chunks > chunk_count) {
+        for (uint32_t i = chunk_count; i < prior_chunks; i++) {
+          String key = cfg_chunk_key(i);
+          prefs.remove(key.c_str());
+        }
+      }
+      ok = true;
+    }
+  }
   prefs.end();
 
   if (!ok) {
