@@ -123,10 +123,10 @@ V1 requirement:
 ### Wizard steps (V1, M7.2 order)
 1) **Welcome + Admin Password** (merged; guided operator instructions)
 2) **Network** (change AP password from default; SSID change optional; STA optional)
-3) **Time & RTC** (RTC detected? set timezone; verify timestamp)
-4) **Storage** (SD detected? logging status; choose retention)
-5) **NFC** (add Admin card(s), add User card(s) if desired; confirm permissions)
-6) **Sensors** (enable motion/door/tamper; basic calibration/sensitivity)
+3) **Time & RTC** (RTC detected? set timezone; verify timestamp; M7.3 includes RTC pin assignment)
+4) **Storage** (SD detected? logging status; choose retention; M7.3 includes SD SPI pin assignment)
+5) **NFC** (add Admin card(s), add User card(s) if desired; confirm permissions; M7.3 includes PN532 SPI module selection + pin assignment, with optional IRQ/RST)
+6) **Sensors** (enable motion/door/tamper; basic calibration/sensitivity; M7.3 motion selection includes LD2410B UART pin assignment)
 7) **Outputs** (test horn/light; set default patterns)
 8) **Review + Complete** (summary + final validation; marks setup complete)
 
@@ -142,9 +142,9 @@ A) Auto-refresh policy
 B) Step order (critical first)
 - Step 1: Welcome + Admin Password (merged) with guided operator instructions.
 - Step 2: Network; change AP password from default (required); SSID change optional; STA optional.
-- Step 3: Inputs (NFC + Sensors); merged step with guided instructions; never blocked by missing hardware.
-- Step 4: Time & RTC.
-- Step 5: Storage.
+- Step 3: Inputs (NFC + Sensors); merged step with guided instructions; includes pin assignment (NFC + sensors), PN532 SPI module selection for M7.3, and LD2410B UART pin selection; never blocked by missing hardware.
+- Step 4: Time & RTC; includes RTC pin selection for M7.3.
+- Step 5: Storage; includes SD SPI pin selection for M7.3.
 - Step 6: Outputs.
 - Step 7: Review & Complete.
 - Hardware steps must never be blocked by missing hardware; show "Unknown" with guided instructions.
@@ -164,7 +164,7 @@ D) Completion requirements (LOCKED)
 E) Save vs Complete semantics (Mode C)
 - "Save step": persist current step inputs without finishing the wizard; use when pausing or waiting on hardware.
 - "Continue": advance to the next step after saving current inputs.
-- "Complete setup": final validation + mark setup completed.
+- "Complete setup": final validation + mark setup completed; on success, return to `/` (home).
 
 F) Persistence across OTA (LOCKED V1)
 - Configuration is stored in NVS and persists across OTA updates.
@@ -178,6 +178,9 @@ G) `/setup` routing and read-only post-completion
 H) Security boundary reminders
 - `/setup` never displays secrets (Wi-Fi passwords, tokens, raw UID).
 - Re-run setup requires Admin Authenticated (not merely Admin Eligible).
+
+I) Save failure messaging (Mode C)
+- If saving fails, the UI must clearly say settings were not saved and must not silently imply persistence.
 
 ## 9) Factory Restore (Admin only)
 
