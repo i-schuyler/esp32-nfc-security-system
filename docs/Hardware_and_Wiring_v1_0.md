@@ -49,6 +49,32 @@ The project will publish a canonical pin map once you confirm:
 
 This is intentionally left **TBD** to avoid inventing pins.
 
+## M7.3 Runtime Pin Configuration (Setup Wizard)
+
+Planned (M7.3): This section defines the runtime pin-selection contract and the Setup Wizard UI/firmware handshake.
+
+Devices covered in M7.3 pin selection:
+- PN532 NFC (SPI) + optional IRQ/RST
+- microSD (SPI)
+- DS3231 RTC (I2C)
+- LD2410B motion (UART)
+- (Optional later) ADXL345 (I2C), reed/tamper inputs (GPIO)
+
+UI/firmware contract:
+- Setup Wizard must allow selecting module part number / interface mode and pins, and reflect it in runtime behavior.
+- Must provide sane pin options (allowlist; exclude risky pins).
+- No step blocked by missing hardware; missing hardware shows Unknown + guided checks.
+
+Persistence:
+- V1 persists config in NVS and must survive reboot + OTA.
+- SD+NVS dual-save is deferred to V2.
+
+Security:
+- Never display or log secrets (Wi-Fi passwords, admin password, tokens, raw NFC UID).
+
+Default recommended pin map:
+- Recommended defaults are defined in `Wiring_Instructions_DevKitV1_v1_0.md`.
+
 ## 5) Output Driver Requirements
 
 Horn and light likely exceed ESP32 GPIO current.

@@ -19,7 +19,7 @@ When documents appear to conflict, resolve in this order:
 2. **Security + Access Model** (`Networking_and_Security_v1_0.md`, `NFC_Data_Contracts_v1_0.md`)
 3. **Logging & Evidence Contracts** (`Event_Log_Schema_v1_0.md`)
 4. **Feature Specification** (`Product_Specification_v1_0.md`)
-5. **Hardware & Wiring Contract** (`Hardware_and_Wiring_v1_0.md`)
+5. **Hardware & Wiring Contract** (`Hardware_and_Wiring_v1_0.md`, `Wiring_Instructions_DevKitV1_v1_0.md`)
 6. **UI Contract** (`Web_UI_Spec_v1_0.md`, `Web_UI_Style_Language_ModeC_v1_0.md`) — includes Setup Wizard + Factory Restore contracts
 7. **OTA/Update Contract** (`OTA_Update_Contract_v1_0.md`)
 8. **Configuration Registry** (`Configuration_Registry_v1_0.md`)
@@ -48,6 +48,7 @@ Implementation (code) must conform to the above.
 
 6) Hardware & Wiring  
    - `Hardware_and_Wiring_v1_0.md`
+   - `Wiring_Instructions_DevKitV1_v1_0.md`
 
 7) Networking & Security  
    - `Networking_and_Security_v1_0.md`
