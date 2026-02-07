@@ -318,6 +318,22 @@ static void log_ota_event(const char* severity, const char* msg, const char* res
   }
 }
 
+static void log_wizard_event(const char* severity, const char* event_type, const char* msg,
+                             const char* step, const char* reason) {
+  if (!g_log) return;
+  StaticJsonDocument<192> extra;
+  if (step && step[0]) extra["step"] = step;
+  if (reason && reason[0]) extra["reason"] = reason;
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  if (severity && strcmp(severity, "warn") == 0) {
+    g_log->log_warn("ui", event_type, msg, &o);
+  } else if (severity && strcmp(severity, "error") == 0) {
+    g_log->log_error("ui", event_type, msg, &o);
+  } else {
+    g_log->log_info("ui", event_type, msg, &o);
+  }
+}
+
 static void handle_ota_status() {
   if (!admin_required("ota_status")) return;
   StaticJsonDocument<256> doc;
@@ -757,24 +773,46 @@ static void handle_wizard_set_step() {
   StaticJsonDocument<768> body;
   DeserializationError de = deserializeJson(body, server.arg("plain"));
   if (de) {
+    log_wizard_event("warn", "wizard_step_save_fail", "wizard step save failed", "", "bad_json");
     server.send(400, "application/json", "{\"error\":\"bad_json\"}");
     return;
   }
 
-  // Wizard endpoints are allowed even without admin mode, but only before completion.
-  if (g_cfg->setup_completed()) {
-    if (!admin_required("wizard_set_step")) return;
-  }
-
   String step = body["step"] | String("");
   JsonObject payload = body["data"].as<JsonObject>();
+  bool is_restart = false;
 
   // Apply wizard fields.
   String err;
   bool ok = true;
   if (!step.length()) {
+    log_wizard_event("warn", "wizard_step_save_fail", "wizard step save failed", "", "missing_step");
     server.send(400, "application/json", "{\"error\":\"missing_step\"}");
     return;
+  }
+
+  if (payload && payload.containsKey("setup_completed") && payload["setup_completed"].is<bool>()) {
+    if (!payload["setup_completed"].as<bool>() && g_cfg->setup_completed()) {
+      is_restart = true;
+    }
+  }
+
+  log_wizard_event("info", "wizard_step_save_start", "wizard step save started", step.c_str(), "");
+  if (is_restart) {
+    log_wizard_event("info", "wizard_restart_requested", "wizard restart requested", step.c_str(), "");
+  }
+
+  // Wizard endpoints are allowed even without admin mode, but only before completion.
+  if (g_cfg->setup_completed()) {
+    if (!admin_required("wizard_set_step")) {
+      log_wizard_event("warn", "wizard_step_save_fail", "wizard step save failed",
+        step.c_str(), "admin_required");
+      if (is_restart) {
+        log_wizard_event("warn", "wizard_restart_fail", "wizard restart failed",
+          step.c_str(), "admin_required");
+      }
+      return;
+    }
   }
 
   // Track last step.
@@ -824,6 +862,10 @@ static void handle_wizard_set_step() {
   }
 
   if (!ok) {
+    log_wizard_event("warn", "wizard_step_save_fail", "wizard step save failed", step.c_str(), err.c_str());
+    if (is_restart) {
+      log_wizard_event("warn", "wizard_restart_fail", "wizard restart failed", step.c_str(), err.c_str());
+    }
     server.send(400, "application/json", String("{\"error\":\"") + err + "\"}");
     return;
   }
@@ -831,11 +873,25 @@ static void handle_wizard_set_step() {
   String save_err;
   g_cfg->ensure_runtime_defaults();
   if (!g_cfg->save(save_err)) {
-    server.send(500, "application/json", "{\"error\":\"save_failed\"}");
+    log_wizard_event("error", "wizard_step_save_fail", "wizard step save failed",
+      step.c_str(), save_err.c_str());
+    if (is_restart) {
+      log_wizard_event("error", "wizard_restart_fail", "wizard restart failed",
+        step.c_str(), save_err.c_str());
+    }
+    StaticJsonDocument<128> out;
+    out["error"] = "save_failed";
+    if (save_err.length()) out["detail"] = save_err;
+    send_json(500, out);
     return;
   }
 
+  g_log->log_info("config", "cfg_save_ok", "config save ok");
   g_log->log_config_change("ui", changed);
+  log_wizard_event("info", "wizard_step_save_ok", "wizard step save ok", step.c_str(), "");
+  if (is_restart) {
+    log_wizard_event("info", "wizard_restart_ok", "wizard restart ok", step.c_str(), "");
+  }
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -845,22 +901,30 @@ static void handle_wizard_complete() {
     return;
   }
 
+  log_wizard_event("info", "wizard_complete_start", "wizard complete started", "complete", "");
+
   // Ensure required minimums. (M1: primary sensor must be motion OR door enabled.)
   bool motion = g_cfg->doc()["motion_enabled"] | true;
   bool door = g_cfg->doc()["door_enabled"] | false;
   if (!motion && !door) {
     g_log->log_warn("ui", "wizard_blocked", "wizard completion blocked: no primary sensor enabled");
+    log_wizard_event("warn", "wizard_complete_fail", "wizard complete failed",
+      "complete", "primary_sensor_required");
     server.send(409, "application/json", "{\"error\":\"primary_sensor_required\"}");
     return;
   }
 
   if (!g_cfg->admin_password_set()) {
+    log_wizard_event("warn", "wizard_complete_fail", "wizard complete failed",
+      "complete", "admin_password_required");
     server.send(409, "application/json", "{\"error\":\"admin_password_required\"}");
     return;
   }
 
   if (g_cfg->ap_password_is_default()) {
     g_log->log_warn("ui", "wizard_blocked", "wizard completion blocked: AP password still default");
+    log_wizard_event("warn", "wizard_complete_fail", "wizard complete failed",
+      "complete", "ap_password_change_required");
     server.send(409, "application/json", "{\"error\":\"ap_password_change_required\"}");
     return;
   }
@@ -870,10 +934,17 @@ static void handle_wizard_complete() {
   g_cfg->wizard_set("setup_last_step", "complete", err);
   String save_err;
   if (!g_cfg->save(save_err)) {
-    server.send(500, "application/json", "{\"error\":\"save_failed\"}");
+    log_wizard_event("error", "wizard_complete_fail", "wizard complete failed",
+      "complete", save_err.c_str());
+    StaticJsonDocument<128> out;
+    out["error"] = "save_failed";
+    if (save_err.length()) out["detail"] = save_err;
+    send_json(500, out);
     return;
   }
+  g_log->log_info("config", "cfg_save_ok", "config save ok");
   g_log->log_info("ui", "wizard_completed", "setup wizard completed");
+  log_wizard_event("info", "wizard_complete_ok", "wizard complete ok", "complete", "");
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1071,6 +1142,9 @@ static String content_type_for(const String& path) {
 void wss_web_begin(WssConfigStore& cfg, WssEventLogger& log) {
   g_cfg = &cfg;
   g_log = &log;
+
+  const char* header_keys[] = {"X-Admin-Token"};
+  server.collectHeaders(header_keys, 1);
 
   server.on("/api/status", HTTP_GET, handle_status);
   server.on("/api/events", HTTP_GET, handle_events);

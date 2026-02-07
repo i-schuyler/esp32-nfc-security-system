@@ -208,6 +208,16 @@
     if (el) el.textContent = txt;
   }
 
+  function clearAdminSession() {
+    state.adminToken = '';
+    localStorage.removeItem('wss_admin_token');
+  }
+
+  function saveFailedMessage(detail) {
+    if (detail) return `Save failed. Settings were not saved. (${detail})`;
+    return 'Save failed. Settings were not saved.';
+  }
+
   function asUnknown(v) {
     if (v === undefined || v === null) return 'Unknown';
     if (typeof v === 'string' && (v.trim() === '' || v === 'u')) return 'Unknown';
@@ -398,7 +408,7 @@
     state.lastStep = normalizeStep(j.setup_last_step || 'welcome');
     state.adminMode = j.admin_mode || (j.admin_mode_active ? 'authenticated' : 'off');
     state.adminRemainingS = j.admin_mode_remaining_s || 0;
-    state.adminActive = state.adminMode === 'authenticated';
+    state.adminActive = state.adminMode === 'authenticated' && !!state.adminToken;
 
     const fw = `${j.firmware_name || ''} ${j.firmware_version || ''}`.trim();
     setText('fw', fw.length ? fw : 'Unknown');
@@ -602,7 +612,12 @@
 
     const r = await jpost('/api/wizard/step', { step, data });
     if (!r.ok) {
-      setText('wizError', `Error: ${(r.json && r.json.error) || r.status}`);
+      const err = r.json && r.json.error;
+      if (err === 'save_failed') {
+        setText('wizError', saveFailedMessage(r.json && r.json.detail));
+      } else {
+        setText('wizError', `Error: ${err || r.status}`);
+      }
       return;
     }
     await refreshStatus();
@@ -613,11 +628,15 @@
     setText('wizError', '');
     const r = await jpost('/api/wizard/complete', {});
     if (!r.ok) {
-      setText('wizError', `Error: ${(r.json && r.json.error) || r.status}`);
+      const err = r.json && r.json.error;
+      if (err === 'save_failed') {
+        setText('wizError', saveFailedMessage(r.json && r.json.detail));
+      } else {
+        setText('wizError', `Error: ${err || r.status}`);
+      }
       return;
     }
-    await refreshStatus();
-    await refreshEvents();
+    window.location = '/';
   });
 
   on($('btnAdminLogin'), 'click', async () => {
@@ -727,7 +746,20 @@
     setText('setupRerunHint', '');
     const r = await jpost('/api/wizard/step', { step: 'welcome', data: { setup_completed: false } });
     if (!r.ok) {
-      const msg = `Error: ${(r.json && r.json.error) || r.status}`;
+      const err = r.json && r.json.error;
+      if (r.status === 403 && err === 'admin_token_invalid') {
+        clearAdminSession();
+        setText('adminError', 'Admin session expired. Log in again.');
+        setText('setupRerunHint', 'Admin session expired. Log in again.');
+        return;
+      }
+      if (r.status === 403 && err === 'admin_required') {
+        clearAdminSession();
+        setText('adminError', 'Admin Authenticated required.');
+        setText('setupRerunHint', 'Admin Authenticated required.');
+        return;
+      }
+      const msg = `Error: ${err || r.status}`;
       setText('adminError', msg);
       setText('setupRerunHint', msg);
       return;
