@@ -133,8 +133,11 @@
     const current = normalizeStep(stepEl.value);
     const isLast = current === WIZARD_STEP_IDS[WIZARD_STEP_IDS.length - 1];
     const status = completionStatus();
+    const conflicts = detectPinConflicts();
+    const hasConflicts = conflicts.length > 0;
     const canComplete = isLast && status.allVisited
-      && status.adminPasswordSet && status.apPasswordSet && status.primarySensorEnabled;
+      && status.adminPasswordSet && status.apPasswordSet && status.primarySensorEnabled
+      && !hasConflicts;
     setHidden($('wizComplete'), !canComplete);
 
     if (!$('wizCompleteHint')) return;
@@ -147,7 +150,13 @@
     if (!status.adminPasswordSet) missing.push('set admin password');
     if (!status.apPasswordSet) missing.push('change AP password from default');
     if (!status.primarySensorEnabled) missing.push('enable a primary sensor');
-    setText('wizCompleteHint', missing.length ? `To complete: ${missing.join(', ')}.` : '');
+    const base = missing.length ? `To complete: ${missing.join(', ')}.` : '';
+    if (hasConflicts) {
+      const conflictMsg = `Pin conflicts: ${conflicts.join('; ')}.`;
+      setText('wizCompleteHint', base.length ? `${base} ${conflictMsg}` : conflictMsg);
+      return;
+    }
+    setText('wizCompleteHint', base);
   }
 
   function setWizardStep(step, opts) {
@@ -266,6 +275,94 @@
     return 'Unknown';
   }
 
+  function isInputOnlyPin(pin) {
+    return pin >= 34 && pin <= 39;
+  }
+
+  function pinValueText(pin, emptyText) {
+    if (pin === undefined || pin === null || pin < 0) return emptyText || 'Not used';
+    return String(pin);
+  }
+
+  function detectPinConflicts() {
+    const conflicts = [];
+    const claims = {};
+
+    function claim(pin, role) {
+      if (pin === undefined || pin === null || pin < 0) return;
+      const key = String(pin);
+      if (!claims[key]) claims[key] = [];
+      claims[key].push(role);
+    }
+
+    function checkOutput(role, pin) {
+      if (pin === undefined || pin === null || pin < 0) return;
+      if (isInputOnlyPin(pin)) {
+        conflicts.push(`${role} uses input-only GPIO ${pin}`);
+      }
+    }
+
+    const sdEnabled = state.sd.enabled !== false;
+    const sdCs = sdEnabled ? state.sd.cs : -1;
+    claim(sdCs, 'SD CS');
+    checkOutput('SD CS', sdCs);
+
+    const nfcIface = state.nfc.iface || 'spi';
+    if (nfcIface === 'spi') {
+      const nfcCs = state.nfc.cs;
+      const nfcRst = state.nfc.rst;
+      const nfcIrq = state.nfc.irq;
+      claim(nfcCs, 'NFC CS');
+      claim(nfcRst, 'NFC RST');
+      claim(nfcIrq, 'NFC IRQ');
+      checkOutput('NFC CS', nfcCs);
+      checkOutput('NFC RST', nfcRst);
+    }
+
+    if (state.motionKind === 'ld2410b_uart') {
+      const rx = state.ld2410b.rx;
+      const tx = state.ld2410b.tx;
+      claim(rx, 'LD2410B RX');
+      claim(tx, 'LD2410B TX');
+      checkOutput('LD2410B TX', tx);
+    }
+
+    for (const pin in claims) {
+      const roles = claims[pin];
+      if (roles.length > 1) {
+        conflicts.push(`GPIO ${pin} used by ${roles.join(' + ')}`);
+      }
+    }
+    return conflicts;
+  }
+
+  function buildPinMapRows() {
+    const rows = [
+      { label: 'SPI bus (fixed)', value: 'SCK 18, MISO 19, MOSI 23' },
+      { label: 'I2C bus (fixed)', value: 'SDA 21, SCL 22' },
+    ];
+
+    const sdEnabled = state.sd.enabled !== false;
+    rows.push({
+      label: 'SD CS',
+      value: sdEnabled ? pinValueText(state.sd.cs) : 'Disabled',
+    });
+
+    const nfcIface = state.nfc.iface || 'spi';
+    if (nfcIface === 'spi') {
+      rows.push({ label: 'NFC CS', value: pinValueText(state.nfc.cs) });
+      rows.push({ label: 'NFC RST', value: pinValueText(state.nfc.rst) });
+      rows.push({ label: 'NFC IRQ', value: pinValueText(state.nfc.irq) });
+    }
+
+    if (state.motionKind === 'ld2410b_uart') {
+      rows.push({ label: 'LD2410B RX', value: pinValueText(state.ld2410b.rx) });
+      rows.push({ label: 'LD2410B TX', value: pinValueText(state.ld2410b.tx) });
+    }
+
+    return rows;
+  }
+
   function networkText(j) {
     const mode = j.wifi_mode || '';
     const ip = j.ip || '';
@@ -354,6 +451,20 @@
       if (value !== undefined) s.value = value;
       host.appendChild(s);
       return s;
+    }
+
+    function addKv(label, value) {
+      const row = document.createElement('div');
+      row.className = 'kv';
+      const k = document.createElement('div');
+      k.className = 'k';
+      k.textContent = label;
+      const v = document.createElement('div');
+      v.className = 'v';
+      v.textContent = value;
+      row.appendChild(k);
+      row.appendChild(v);
+      host.appendChild(row);
     }
 
     if (step === 'welcome') {
@@ -530,6 +641,11 @@
     if (step === 'review') {
       addLabel('Review settings and complete setup.');
       addLabel('Final validation happens on the device.');
+      addLabel('Pin Map (read-only).');
+      const rows = buildPinMapRows();
+      for (const row of rows) {
+        addKv(row.label, row.value);
+      }
       return;
     }
   }
