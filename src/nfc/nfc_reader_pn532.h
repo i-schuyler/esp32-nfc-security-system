@@ -10,9 +10,16 @@ struct WssNfcTagInfo {
   uint32_t capacity_bytes = 0;
 };
 
+struct WssNfcPn532Config {
+  bool use_spi = false;
+  int spi_cs_gpio = -1;
+  int spi_irq_gpio = -1;
+  int spi_rst_gpio = -1;
+};
+
 class WssNfcReaderPn532 {
  public:
-  bool begin();
+  bool begin(const WssNfcPn532Config& cfg);
   bool poll(WssNfcTagInfo& out);
   bool write_ndef(const uint8_t* ndef, size_t len, uint32_t& bytes_written, String& err);
   bool ok() const { return _ok; }
@@ -20,6 +27,10 @@ class WssNfcReaderPn532 {
 
  private:
   bool _ok = false;
+  bool _use_spi = false;
+  int _spi_cs_gpio = -1;
+  int _spi_irq_gpio = -1;
+  int _spi_rst_gpio = -1;
   uint32_t _last_poll_ms = 0;
   uint8_t _last_uid[10];
   uint8_t _last_uid_len = 0;

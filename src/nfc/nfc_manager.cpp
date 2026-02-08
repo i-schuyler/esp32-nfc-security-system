@@ -47,6 +47,8 @@ static bool g_admin_eligible_active = false;
 static uint32_t g_admin_eligible_until_ms = 0;
 static WssNfcReaderPn532 g_reader;
 static bool g_reader_ok = false;
+static uint32_t g_cfg_hash = 0;
+static uint32_t g_last_init_ok_log_ms = 0;
 static WssNfcTagInfo g_last_tag;
 static uint32_t g_last_tag_seen_ms = 0;
 static String g_last_writeback_result;
@@ -64,6 +66,16 @@ static bool feature_enabled() {
 static bool cfg_bool(const char* k, bool def) {
   if (!g_cfg) return def;
   return g_cfg->doc()[k] | def;
+}
+
+static int cfg_int(const char* k, int def) {
+  if (!g_cfg) return def;
+  return g_cfg->doc()[k] | def;
+}
+
+static String cfg_str(const char* k, const char* def) {
+  if (!g_cfg) return String(def);
+  return String(g_cfg->doc()[k] | def);
 }
 
 static void set_health_disabled_build() {
@@ -200,6 +212,27 @@ static uint32_t cfg_u32(const char* k, uint32_t def) {
   if (root[k].is<uint32_t>()) return root[k].as<uint32_t>();
   if (root[k].is<int>()) return (uint32_t)root[k].as<int>();
   return def;
+}
+
+static String nfc_interface() {
+  String iface = cfg_str("nfc_interface", "spi");
+  if (iface != "spi" && iface != "i2c") return String("spi");
+  return iface;
+}
+
+static uint32_t nfc_cfg_hash(const String& iface, int cs, int irq, int rst) {
+  uint32_t h = 2166136261u;
+  for (size_t i = 0; i < iface.length(); i++) {
+    h ^= (uint8_t)iface[i];
+    h *= 16777619u;
+  }
+  h ^= (uint32_t)cs;
+  h *= 16777619u;
+  h ^= (uint32_t)irq;
+  h *= 16777619u;
+  h ^= (uint32_t)rst;
+  h *= 16777619u;
+  return h;
 }
 
 static bool time_valid_now() {
@@ -715,6 +748,17 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_last_writeback_ts = "";
   (void)wss_nfc_allowlist_begin(log);
 
+  String iface = nfc_interface();
+  int cs_gpio = cfg_int("nfc_spi_cs_gpio", 27);
+  int irq_gpio = cfg_int("nfc_spi_irq_gpio", 32);
+  int rst_gpio = cfg_int("nfc_spi_rst_gpio", 33);
+  g_status.interface = iface;
+  g_status.spi_cs_gpio = cs_gpio;
+  g_status.spi_irq_gpio = irq_gpio;
+  g_status.spi_rst_gpio = rst_gpio;
+  g_cfg_hash = nfc_cfg_hash(iface, cs_gpio, irq_gpio, rst_gpio);
+  g_last_init_ok_log_ms = 0;
+
   if (!g_status.feature_enabled) {
     set_health_disabled_build();
     return;
@@ -726,7 +770,12 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
     return;
   }
 
-  g_reader_ok = g_reader.begin();
+  WssNfcPn532Config pn_cfg;
+  pn_cfg.use_spi = (iface == "spi");
+  pn_cfg.spi_cs_gpio = cs_gpio;
+  pn_cfg.spi_irq_gpio = irq_gpio;
+  pn_cfg.spi_rst_gpio = rst_gpio;
+  g_reader_ok = g_reader.begin(pn_cfg);
   if (!g_reader_ok) {
     set_health_unavailable();
     if (g_log && !g_logged_unavailable) {
@@ -735,11 +784,18 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
       extra["reason"] = g_reader.last_error();
       JsonObjectConst o = extra.as<JsonObjectConst>();
       g_log->log_warn("nfc", "nfc_unavailable", "nfc reader unavailable", &o);
+      g_log->log_warn("nfc", "nfc_init_fail", "nfc init failed", &o);
     }
     return;
   }
   g_status.health = "ok";
   g_status.reader_present = true;
+  if (g_log) {
+    StaticJsonDocument<128> extra;
+    extra["interface"] = iface;
+    JsonObjectConst o = extra.as<JsonObjectConst>();
+    g_log->log_info("nfc", "nfc_init_ok", "nfc init ok", &o);
+  }
 }
 
 void wss_nfc_loop() {
@@ -747,6 +803,14 @@ void wss_nfc_loop() {
 
   g_status.feature_enabled = feature_enabled();
   g_status.enabled_cfg = cfg_bool("control_nfc_enabled", true);
+  String iface = nfc_interface();
+  int cs_gpio = cfg_int("nfc_spi_cs_gpio", 27);
+  int irq_gpio = cfg_int("nfc_spi_irq_gpio", 32);
+  int rst_gpio = cfg_int("nfc_spi_rst_gpio", 33);
+  g_status.interface = iface;
+  g_status.spi_cs_gpio = cs_gpio;
+  g_status.spi_irq_gpio = irq_gpio;
+  g_status.spi_rst_gpio = rst_gpio;
 
   if (!g_status.feature_enabled) {
     set_health_disabled_build();
@@ -771,15 +835,37 @@ void wss_nfc_loop() {
     g_reader_ok = false;
   }
 
+  uint32_t new_hash = nfc_cfg_hash(iface, cs_gpio, irq_gpio, rst_gpio);
+  if (new_hash != g_cfg_hash) {
+    g_cfg_hash = new_hash;
+    g_reader_ok = false;
+    g_logged_unavailable = false;
+  }
+
   uint32_t now_ms = millis();
   if (!g_reader_ok) {
-    g_reader_ok = g_reader.begin();
+    WssNfcPn532Config cfg;
+    cfg.use_spi = (iface == "spi");
+    cfg.spi_cs_gpio = cs_gpio;
+    cfg.spi_irq_gpio = irq_gpio;
+    cfg.spi_rst_gpio = rst_gpio;
+    g_reader_ok = g_reader.begin(cfg);
     if (!g_reader_ok && g_log && !g_logged_unavailable) {
       g_logged_unavailable = true;
       StaticJsonDocument<128> extra;
       extra["reason"] = g_reader.last_error();
       JsonObjectConst o = extra.as<JsonObjectConst>();
       g_log->log_warn("nfc", "nfc_unavailable", "nfc reader unavailable", &o);
+      g_log->log_warn("nfc", "nfc_init_fail", "nfc init failed", &o);
+    }
+    if (g_reader_ok && g_log) {
+      StaticJsonDocument<128> extra;
+      extra["interface"] = iface;
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      if (now_ms - g_last_init_ok_log_ms >= 2000) {
+        g_last_init_ok_log_ms = now_ms;
+        g_log->log_info("nfc", "nfc_init_ok", "nfc init ok", &o);
+      }
     }
   }
   if (!g_reader_ok) {
@@ -1026,6 +1112,14 @@ WssNfcStatus wss_nfc_status() {
   g_status.last_writeback_result = g_last_writeback_result;
   g_status.last_writeback_reason = g_last_writeback_reason;
   g_status.last_writeback_ts = g_last_writeback_ts;
+  if (!g_status.feature_enabled || !g_status.enabled_cfg) {
+    g_status.health_state = "unknown";
+  } else if (!g_reader_ok) {
+    g_status.health_state = "fault";
+  } else {
+    g_status.health_state = "ok";
+  }
+  g_status.last_error = g_reader_ok ? String("") : g_reader.last_error();
   return g_status;
 }
 
@@ -1034,9 +1128,15 @@ void wss_nfc_write_status_json(JsonObject out) {
   out["feature_enabled"] = st.feature_enabled;
   out["enabled_cfg"] = st.enabled_cfg;
   out["health"] = st.health;
+  out["health_state"] = st.health_state;
   out["reader_present"] = st.reader_present;
   out["driver"] = st.driver;
   out["driver_active"] = st.driver_active;
+  out["interface"] = st.interface;
+  if (st.last_error.length()) out["last_error"] = st.last_error;
+  if (st.spi_cs_gpio >= 0) out["spi_cs_gpio"] = st.spi_cs_gpio;
+  if (st.spi_irq_gpio >= 0) out["spi_irq_gpio"] = st.spi_irq_gpio;
+  if (st.spi_rst_gpio >= 0) out["spi_rst_gpio"] = st.spi_rst_gpio;
   out["last_role"] = st.last_role;
   out["last_scan_result"] = st.last_scan_result;
   if (st.last_scan_reason.length()) out["last_scan_reason"] = st.last_scan_reason;
