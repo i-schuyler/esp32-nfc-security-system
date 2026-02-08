@@ -64,6 +64,10 @@ This doc defines all user-adjustable parameters, their meaning, ranges, defaults
 - `motion1_enabled` (bool, default true) — per-sensor enable (append-only; derived from `motion_enabled` if missing)
 - `motion2_enabled` (bool, default false) — per-sensor enable
 - `motion_sensitivity` (range TBD based on LD2410)
+- `motion_kind` (enum: gpio|ld2410b_uart, default gpio)
+- `motion_ld2410b_rx_gpio` (int, default 16)
+- `motion_ld2410b_tx_gpio` (int, default 17)
+- `motion_ld2410b_baud` (int, default 256000)
 - `door_enabled` (bool, default false)
 - `door1_enabled` (bool, default false) — per-sensor enable (append-only; derived from `door_enabled` if missing)
 - `door2_enabled` (bool, default false) — per-sensor enable

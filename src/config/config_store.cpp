@@ -209,6 +209,11 @@ void WssConfigStore::set_defaults() {
   root["motion1_enabled"] = true;
   root["motion2_enabled"] = false;
   root["motion_sensitivity"] = 0;
+  // M7.3: motion sensor interface selection (GPIO vs LD2410B UART).
+  root["motion_kind"] = "gpio";
+  root["motion_ld2410b_rx_gpio"] = 16;
+  root["motion_ld2410b_tx_gpio"] = 17;
+  root["motion_ld2410b_baud"] = 256000;
   root["door_enabled"] = false;
   root["door1_enabled"] = false;
   root["door2_enabled"] = false;
@@ -294,6 +299,13 @@ bool WssConfigStore::validate_or_recover(String& err) {
   if (!root["motion2_enabled"].is<bool>()) root["motion2_enabled"] = false;
   if (!root["door1_enabled"].is<bool>()) root["door1_enabled"] = (bool)(root["door_enabled"] | false);
   if (!root["door2_enabled"].is<bool>()) root["door2_enabled"] = false;
+
+  if (!root.containsKey("motion_kind") || !root["motion_kind"].is<const char*>()) {
+    root["motion_kind"] = "gpio";
+  }
+  if (!root["motion_ld2410b_rx_gpio"].is<long>()) root["motion_ld2410b_rx_gpio"] = 16;
+  if (!root["motion_ld2410b_tx_gpio"].is<long>()) root["motion_ld2410b_tx_gpio"] = 17;
+  if (!root["motion_ld2410b_baud"].is<long>()) root["motion_ld2410b_baud"] = 256000;
 
   if (!root.containsKey("motion1_pull") || !root["motion1_pull"].is<const char*>()) root["motion1_pull"] = "floating";
   if (!root.containsKey("motion1_active_level") || !root["motion1_active_level"].is<const char*>()) root["motion1_active_level"] = "high";

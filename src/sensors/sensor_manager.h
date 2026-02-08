@@ -32,6 +32,17 @@ struct WssSensorsStatus {
   bool any_primary_enabled_cfg = false;
   bool any_primary_configured = false;
   String overall; // ok|no_primary_enabled|unconfigured
+  String motion_kind; // gpio|ld2410b_uart
+  bool ld2410b_selected = false;
+  bool ld2410b_enabled_cfg = false;
+  bool ld2410b_configured = false;
+  String ld2410b_health; // ok|unknown|fault
+  uint32_t ld2410b_last_seen_s = 0;
+  uint32_t ld2410b_parse_errors = 0;
+  int ld2410b_rx_gpio = -1;
+  int ld2410b_tx_gpio = -1;
+  uint32_t ld2410b_baud = 0;
+  bool ld2410b_active = false;
   WssSensorEntryStatus entries[5];
   size_t entry_count = 0;
 };
