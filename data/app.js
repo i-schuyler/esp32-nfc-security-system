@@ -2,6 +2,10 @@
 (function () {
   const $ = (id) => document.getElementById(id);
 
+  const LD2410B_DEFAULT_BAUD = 256000;
+  const LD2410B_SAFE_PINS = [4, 5, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33];
+  const LD2410B_SAFE_TX_PINS = LD2410B_SAFE_PINS.filter((pin) => pin < 34);
+
   const state = {
     adminToken: localStorage.getItem('wss_admin_token') || '',
     setupRequired: true,
@@ -10,6 +14,8 @@
     adminActive: false,
     adminRemainingS: 0,
     wizInitialized: false,
+    motionKind: 'gpio',
+    ld2410b: { rx: 16, tx: 17, baud: LD2410B_DEFAULT_BAUD },
   };
   const APP_PAGE = (window.APP_PAGE || 'main');
   const isSetupPage = APP_PAGE === 'setup';
@@ -325,6 +331,24 @@
       host.appendChild(wrap);
     }
 
+    function addSelect(id, label, options, value) {
+      const l = document.createElement('label');
+      l.className = 'small';
+      l.textContent = label;
+      host.appendChild(l);
+      const s = document.createElement('select');
+      s.id = id;
+      for (const opt of options) {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.label;
+        s.appendChild(o);
+      }
+      if (value !== undefined) s.value = value;
+      host.appendChild(s);
+      return s;
+    }
+
     if (step === 'welcome') {
       addLabel('Setup is required until all steps are completed.');
       addLabel('Set the admin password to protect changes.');
@@ -371,6 +395,69 @@
       addLabel('Enable at least one primary sensor.');
       addLabel('NFC: Unknown until a reader is detected.');
       addLabel('Sensors: Unknown until configured.');
+      const motionKind = addSelect('wiz_motion_kind', 'Motion sensor type', [
+        { value: 'gpio', label: 'GPIO motion inputs' },
+        { value: 'ld2410b_uart', label: 'LD2410B UART' },
+      ], state.motionKind || 'gpio');
+
+      const ldWrap = document.createElement('div');
+      ldWrap.className = 'row';
+      ldWrap.id = 'ld2410bFields';
+      host.appendChild(ldWrap);
+
+      function addLdLabel(text) {
+        const p = document.createElement('div');
+        p.className = 'small';
+        p.textContent = text;
+        ldWrap.appendChild(p);
+      }
+
+      function addLdSelect(id, label, options, value) {
+        const l = document.createElement('label');
+        l.className = 'small';
+        l.textContent = label;
+        ldWrap.appendChild(l);
+        const s = document.createElement('select');
+        s.id = id;
+        for (const opt of options) {
+          const o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.label;
+          s.appendChild(o);
+        }
+        if (value !== undefined) s.value = value;
+        ldWrap.appendChild(s);
+        return s;
+      }
+
+      function addLdInput(id, label, type, placeholder) {
+        const l = document.createElement('label');
+        l.className = 'small';
+        l.textContent = label;
+        ldWrap.appendChild(l);
+        const i = document.createElement('input');
+        i.id = id;
+        i.type = type || 'text';
+        if (placeholder) i.placeholder = placeholder;
+        ldWrap.appendChild(i);
+        return i;
+      }
+
+      addLdLabel('LD2410B: Unknown until UART data is seen.');
+      addLdLabel('Check power and RX/TX if status stays Unknown.');
+      const rxDefault = LD2410B_SAFE_PINS.includes(state.ld2410b.rx) ? state.ld2410b.rx : 16;
+      const txDefault = LD2410B_SAFE_TX_PINS.includes(state.ld2410b.tx) ? state.ld2410b.tx : 17;
+      addLdSelect('wiz_ld2410b_rx', 'LD2410B RX (ESP32 RX2)', LD2410B_SAFE_PINS.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })), String(rxDefault));
+      addLdSelect('wiz_ld2410b_tx', 'LD2410B TX (ESP32 TX2)', LD2410B_SAFE_TX_PINS.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })), String(txDefault));
+      const baudInput = addLdInput('wiz_ld2410b_baud', 'LD2410B baud', 'number', String(LD2410B_DEFAULT_BAUD));
+      baudInput.value = String(state.ld2410b.baud || LD2410B_DEFAULT_BAUD);
+
       addCheckbox('wiz_motion_enabled', 'Motion sensor enabled');
       addCheckbox('wiz_door_enabled', 'Door/window sensor enabled');
       addLabel('At least one primary sensor must be enabled to complete setup.');
@@ -381,6 +468,12 @@
       const door = $('wiz_door_enabled');
       if (motion) motion.addEventListener('change', () => { updatePrimarySensorFlag(); updateWizardActions(); });
       if (door) door.addEventListener('change', () => { updatePrimarySensorFlag(); updateWizardActions(); });
+      if (motionKind) {
+        motionKind.addEventListener('change', () => {
+          ldWrap.classList.toggle('hidden', motionKind.value !== 'ld2410b_uart');
+        });
+        ldWrap.classList.toggle('hidden', motionKind.value !== 'ld2410b_uart');
+      }
       updatePrimarySensorFlag(true);
       return;
     }
@@ -409,6 +502,14 @@
     state.adminMode = j.admin_mode || (j.admin_mode_active ? 'authenticated' : 'off');
     state.adminRemainingS = j.admin_mode_remaining_s || 0;
     state.adminActive = state.adminMode === 'authenticated' && !!state.adminToken;
+    const sens = j.sensors || {};
+    state.motionKind = sens.motion_kind || 'gpio';
+    const ld = sens.ld2410b || {};
+    state.ld2410b = {
+      rx: (ld.rx_gpio !== undefined) ? ld.rx_gpio : 16,
+      tx: (ld.tx_gpio !== undefined) ? ld.tx_gpio : 17,
+      baud: (ld.baud !== undefined) ? ld.baud : LD2410B_DEFAULT_BAUD,
+    };
 
     const fw = `${j.firmware_name || ''} ${j.firmware_version || ''}`.trim();
     setText('fw', fw.length ? fw : 'Unknown');
@@ -601,6 +702,13 @@
     if (step === 'sensors') {
       data.motion_enabled = !!$('wiz_motion_enabled').checked;
       data.door_enabled = !!$('wiz_door_enabled').checked;
+      const kind = ($('wiz_motion_kind') && $('wiz_motion_kind').value) || 'gpio';
+      data.motion_kind = kind;
+      if (kind === 'ld2410b_uart') {
+        data.motion_ld2410b_rx_gpio = parseInt($('wiz_ld2410b_rx').value || '16', 10) || 16;
+        data.motion_ld2410b_tx_gpio = parseInt($('wiz_ld2410b_tx').value || '17', 10) || 17;
+        data.motion_ld2410b_baud = parseInt($('wiz_ld2410b_baud').value || String(LD2410B_DEFAULT_BAUD), 10) || LD2410B_DEFAULT_BAUD;
+      }
       if ($('wiz_web_enabled')) data.control_web_enabled = !!$('wiz_web_enabled').checked;
       if ($('wiz_nfc_enabled')) data.control_nfc_enabled = !!$('wiz_nfc_enabled').checked;
       updatePrimarySensorFlag();
