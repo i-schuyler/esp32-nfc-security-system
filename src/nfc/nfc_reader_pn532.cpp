@@ -4,6 +4,7 @@
 #include "nfc_reader_pn532.h"
 
 #include <Wire.h>
+#include <SPI.h>
 #include <Adafruit_PN532.h>
 
 #include "../config/pin_config.h"
@@ -13,25 +14,63 @@ namespace {
 static Adafruit_PN532* g_pn532 = nullptr;
 static const uint32_t kPollIntervalMs = 120;
 
-static bool pins_configured() {
+static bool i2c_pins_configured() {
   return (WSS_PIN_I2C_SDA >= 0 && WSS_PIN_I2C_SCL >= 0 && WSS_PIN_NFC_IRQ >= 0 && WSS_PIN_NFC_RESET >= 0);
+}
+
+static void pulse_reset(int pin) {
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, LOW);
+  delay(10);
+  digitalWrite(pin, HIGH);
+  delay(10);
 }
 
 } // namespace
 
-bool WssNfcReaderPn532::begin() {
+bool WssNfcReaderPn532::begin(const WssNfcPn532Config& cfg) {
   _ok = false;
   _last_error = "";
   _last_uid_len = 0;
 
-  if (!pins_configured()) {
-    _last_error = "pins_unset";
-    return false;
-  }
-
-  Wire.begin(WSS_PIN_I2C_SDA, WSS_PIN_I2C_SCL);
-  if (!g_pn532) {
-    g_pn532 = new Adafruit_PN532(WSS_PIN_NFC_IRQ, WSS_PIN_NFC_RESET, &Wire);
+  if (cfg.use_spi) {
+    if (cfg.spi_cs_gpio < 0) {
+      _last_error = "spi_cs_unset";
+      return false;
+    }
+    if (!_use_spi || _spi_cs_gpio != cfg.spi_cs_gpio) {
+      if (g_pn532) {
+        delete g_pn532;
+        g_pn532 = nullptr;
+      }
+    }
+    _use_spi = true;
+    _spi_cs_gpio = cfg.spi_cs_gpio;
+    _spi_irq_gpio = cfg.spi_irq_gpio;
+    _spi_rst_gpio = cfg.spi_rst_gpio;
+    SPI.begin(18, 19, 23);
+    if (_spi_rst_gpio >= 0) {
+      pulse_reset(_spi_rst_gpio);
+    }
+    if (!g_pn532) {
+      g_pn532 = new Adafruit_PN532((uint8_t)_spi_cs_gpio);
+    }
+  } else {
+    if (!i2c_pins_configured()) {
+      _last_error = "pins_unset";
+      return false;
+    }
+    if (_use_spi) {
+      if (g_pn532) {
+        delete g_pn532;
+        g_pn532 = nullptr;
+      }
+    }
+    _use_spi = false;
+    Wire.begin(WSS_PIN_I2C_SDA, WSS_PIN_I2C_SCL);
+    if (!g_pn532) {
+      g_pn532 = new Adafruit_PN532(WSS_PIN_NFC_IRQ, WSS_PIN_NFC_RESET, &Wire);
+    }
   }
 
   g_pn532->begin();

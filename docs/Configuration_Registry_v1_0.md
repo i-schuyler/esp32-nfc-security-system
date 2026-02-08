@@ -46,6 +46,10 @@ This doc defines all user-adjustable parameters, their meaning, ranges, defaults
 - `invalid_scan_window_s` (int, default 30)
 - `invalid_scan_max` (int, default 5)
 - `lockout_duration_s` (int, default 60)
+- `nfc_interface` (enum: spi|i2c, default spi)
+- `nfc_spi_cs_gpio` (int, default 27)
+- `nfc_spi_rst_gpio` (int, default 33)
+- `nfc_spi_irq_gpio` (int, default 32)
 
 ### Alarm Outputs
 - `silenced_duration_s` (int, default 180)

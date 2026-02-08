@@ -5,6 +5,9 @@
   const LD2410B_DEFAULT_BAUD = 256000;
   const LD2410B_SAFE_PINS = [4, 5, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33];
   const LD2410B_SAFE_TX_PINS = LD2410B_SAFE_PINS.filter((pin) => pin < 34);
+  const PN532_CS_SAFE_PINS = [16, 17, 25, 26, 27, 32, 33];
+  const PN532_RST_SAFE_PINS = PN532_CS_SAFE_PINS.slice();
+  const PN532_IRQ_SAFE_PINS = [32, 33, 34, 35, 36, 39];
 
   const state = {
     adminToken: localStorage.getItem('wss_admin_token') || '',
@@ -16,6 +19,7 @@
     wizInitialized: false,
     motionKind: 'gpio',
     ld2410b: { rx: 16, tx: 17, baud: LD2410B_DEFAULT_BAUD },
+    nfc: { iface: 'spi', cs: 27, irq: 32, rst: 33 },
   };
   const APP_PAGE = (window.APP_PAGE || 'main');
   const isSetupPage = APP_PAGE === 'setup';
@@ -395,6 +399,25 @@
       addLabel('Enable at least one primary sensor.');
       addLabel('NFC: Unknown until a reader is detected.');
       addLabel('Sensors: Unknown until configured.');
+      addLabel('NFC module: PN532 (SPI).');
+      const csDefault = PN532_CS_SAFE_PINS.includes(state.nfc.cs) ? state.nfc.cs : 27;
+      const irqDefault = PN532_IRQ_SAFE_PINS.includes(state.nfc.irq) ? state.nfc.irq : -1;
+      const rstDefault = PN532_RST_SAFE_PINS.includes(state.nfc.rst) ? state.nfc.rst : -1;
+      addSelect('wiz_nfc_cs', 'NFC CS (SPI)', PN532_CS_SAFE_PINS.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })), String(csDefault));
+      const irqOptions = [{ value: '-1', label: 'Not used' }].concat(PN532_IRQ_SAFE_PINS.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })));
+      addSelect('wiz_nfc_irq', 'NFC IRQ (optional)', irqOptions, String(irqDefault));
+      const rstOptions = [{ value: '-1', label: 'Not used' }].concat(PN532_RST_SAFE_PINS.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })));
+      addSelect('wiz_nfc_rst', 'NFC RST (optional)', rstOptions, String(rstDefault));
+
       const motionKind = addSelect('wiz_motion_kind', 'Motion sensor type', [
         { value: 'gpio', label: 'GPIO motion inputs' },
         { value: 'ld2410b_uart', label: 'LD2410B UART' },
@@ -542,6 +565,14 @@
     }
 
     const nfc = j.nfc || null;
+    if (nfc) {
+      state.nfc = {
+        iface: nfc.interface || 'spi',
+        cs: (nfc.spi_cs_gpio !== undefined) ? nfc.spi_cs_gpio : 27,
+        irq: (nfc.spi_irq_gpio !== undefined) ? nfc.spi_irq_gpio : -1,
+        rst: (nfc.spi_rst_gpio !== undefined) ? nfc.spi_rst_gpio : -1,
+      };
+    }
     setText('nfcStatus', nfcHealthText(nfc));
     if (nfc && nfc.lockout_active) {
       const rem = (nfc.lockout_remaining_s !== undefined) ? nfc.lockout_remaining_s : '';
@@ -702,6 +733,10 @@
     if (step === 'sensors') {
       data.motion_enabled = !!$('wiz_motion_enabled').checked;
       data.door_enabled = !!$('wiz_door_enabled').checked;
+      data.nfc_interface = 'spi';
+      if ($('wiz_nfc_cs')) data.nfc_spi_cs_gpio = parseInt($('wiz_nfc_cs').value || '27', 10) || 27;
+      if ($('wiz_nfc_irq')) data.nfc_spi_irq_gpio = parseInt($('wiz_nfc_irq').value || '-1', 10);
+      if ($('wiz_nfc_rst')) data.nfc_spi_rst_gpio = parseInt($('wiz_nfc_rst').value || '-1', 10);
       const kind = ($('wiz_motion_kind') && $('wiz_motion_kind').value) || 'gpio';
       data.motion_kind = kind;
       if (kind === 'ld2410b_uart') {

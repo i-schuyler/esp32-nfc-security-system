@@ -183,6 +183,12 @@ void WssConfigStore::set_defaults() {
   root["nfc_url_record_preserve_if_possible"] = true;
   root["nfc_url"] = "http://192.168.4.1/";
 
+  // NFC interface + pins (M7.3 SPI defaults)
+  root["nfc_interface"] = "spi";
+  root["nfc_spi_cs_gpio"] = 27;
+  root["nfc_spi_rst_gpio"] = 33;
+  root["nfc_spi_irq_gpio"] = 32;
+
   // NFC / access (scaffolding)
   root["allow_user_arm"] = true;
   root["allow_user_disarm"] = true;
@@ -290,6 +296,12 @@ bool WssConfigStore::validate_or_recover(String& err) {
   if (!root["admin_mode_timeout_s"].is<long>()) root["admin_mode_timeout_s"] = 600;
   if (!root["control_web_enabled"].is<bool>()) root["control_web_enabled"] = true;
   if (!root["control_nfc_enabled"].is<bool>()) root["control_nfc_enabled"] = true;
+  if (!root.containsKey("nfc_interface") || !root["nfc_interface"].is<const char*>()) {
+    root["nfc_interface"] = "spi";
+  }
+  if (!root["nfc_spi_cs_gpio"].is<long>()) root["nfc_spi_cs_gpio"] = 27;
+  if (!root["nfc_spi_rst_gpio"].is<long>()) root["nfc_spi_rst_gpio"] = 33;
+  if (!root["nfc_spi_irq_gpio"].is<long>()) root["nfc_spi_irq_gpio"] = 32;
 
   // M5: ensure per-sensor keys exist for older configs.
   if (!root["motion_enabled"].is<bool>()) root["motion_enabled"] = true;
