@@ -770,12 +770,12 @@ void wss_nfc_begin(WssConfigStore* cfg, WssEventLogger* log) {
     return;
   }
 
-  WssNfcPn532Config cfg;
-  cfg.use_spi = (iface == "spi");
-  cfg.spi_cs_gpio = cs_gpio;
-  cfg.spi_irq_gpio = irq_gpio;
-  cfg.spi_rst_gpio = rst_gpio;
-  g_reader_ok = g_reader.begin(cfg);
+  WssNfcPn532Config pn_cfg;
+  pn_cfg.use_spi = (iface == "spi");
+  pn_cfg.spi_cs_gpio = cs_gpio;
+  pn_cfg.spi_irq_gpio = irq_gpio;
+  pn_cfg.spi_rst_gpio = rst_gpio;
+  g_reader_ok = g_reader.begin(pn_cfg);
   if (!g_reader_ok) {
     set_health_unavailable();
     if (g_log && !g_logged_unavailable) {
