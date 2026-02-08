@@ -192,6 +192,8 @@ static void handle_status() {
     JsonObject s = doc.createNestedObject("storage");
     s["sd_status"] = sstat.sd_status;
     s["sd_mounted"] = sstat.sd_mounted;
+    s["sd_enabled"] = sstat.sd_enabled_cfg;
+    s["sd_cs_gpio"] = sstat.sd_cs_gpio;
     // UI-friendly aliases (append-only) used by the embedded SPA.
     s["status"] = sstat.sd_status;
     s["pinmap_configured"] = sstat.pinmap_configured;

@@ -94,6 +94,8 @@ M5 adds a minimal, generic GPIO-digital interpretation layer. These keys are onl
 - `enclosure1_active_level` (enum: high|low, default high)
 
 ### Storage
+- `sd_enabled` (bool, default true) — enable SD logging tier; when false, flash ring is used
+- `sd_cs_gpio` (int, default 13) — SD SPI chip-select GPIO (bus pins fixed at 18/19/23 in V1)
 - `sd_required` (bool, default false) — if true, missing SD triggers FAULT or TRIGGERED per policy
 - `log_retention_days` (int, default 365, min 7, max 3650)
 - `hash_chain_logs` (bool, default true)

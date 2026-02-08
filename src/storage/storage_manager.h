@@ -9,11 +9,13 @@ class WssEventLogger;
 
 struct WssStorageStatus {
   bool feature_enabled = false;   // compile-time flag (WSS_FEATURE_SD)
+  bool sd_enabled_cfg = true;     // config flag (runtime)
   bool pinmap_configured = false;
   bool sd_mounted = false;
 
   String sd_status; // OK|MISSING|ERROR|DISABLED
   String fs_type;   // FAT16|FAT32|exFAT|...
+  int sd_cs_gpio = -1;
 
   uint64_t capacity_bytes = 0;
   uint64_t free_bytes = 0;

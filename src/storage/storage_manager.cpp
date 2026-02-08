@@ -24,6 +24,7 @@
 static WssStorageStatus g_status;
 static WssEventLogger* g_log = nullptr;
 static WssConfigStore* g_cfg = nullptr;
+static String g_sd_last_error;
 
 static WssFlashRing g_fallback;
 static uint32_t g_last_poll_ms = 0;
@@ -41,6 +42,12 @@ static const char* kZeroHash64 = "0000000000000000000000000000000000000000000000
 
 // M3: retention enforcement pacing
 static uint32_t g_last_retention_check_ms = 0;
+
+#if WSS_FEATURE_SD
+static const int kSdSpiSck = 18;
+static const int kSdSpiMiso = 19;
+static const int kSdSpiMosi = 23;
+#endif
 
 static String date_key_utc(time_t t) {
   struct tm tm_utc;
@@ -352,17 +359,20 @@ static bool sd_try_mount(const char* reason) {
   g_status.sd_mounted = false;
   g_status.fs_type = "";
   g_status.sd_status = "MISSING";
+  g_sd_last_error = "";
 
-  // SPI init: allow explicit overrides, otherwise Arduino defaults.
-  if (WSS_PIN_SPI_SCK >= 0 && WSS_PIN_SPI_MISO >= 0 && WSS_PIN_SPI_MOSI >= 0) {
-    SPI.begin(WSS_PIN_SPI_SCK, WSS_PIN_SPI_MISO, WSS_PIN_SPI_MOSI, WSS_PIN_SD_CS);
-  } else {
-    SPI.begin();
+  if (g_status.sd_cs_gpio < 0) {
+    g_status.sd_status = "DISABLED";
+    g_sd_last_error = "sd_cs_unset";
+    return false;
   }
 
-  SdSpiConfig cfg(WSS_PIN_SD_CS, SHARED_SPI);
+  SPI.begin(kSdSpiSck, kSdSpiMiso, kSdSpiMosi, g_status.sd_cs_gpio);
+
+  SdSpiConfig cfg(g_status.sd_cs_gpio, SHARED_SPI);
   if (!g_sd.begin(cfg)) {
     g_status.sd_status = "ERROR";
+    g_sd_last_error = "sd_begin_failed";
     return false;
   }
 
@@ -375,6 +385,7 @@ static bool sd_try_mount(const char* reason) {
   if (!open_log_file_if_needed(now)) {
     g_status.sd_status = "ERROR";
     g_status.sd_mounted = false;
+    g_sd_last_error = "sd_log_open_failed";
     return false;
   }
 
@@ -392,6 +403,21 @@ static void emit_sd_status_log(const char* msg) {
   extra["backend"] = g_status.active_backend;
   JsonObjectConst o = extra.as<JsonObjectConst>();
   g_log->log_info("sd", "sd_status", msg, &o);
+}
+
+static void emit_sd_init_log(bool ok) {
+  if (!g_log) return;
+  StaticJsonDocument<192> extra;
+  extra["cs_gpio"] = g_status.sd_cs_gpio;
+  if (!ok && g_sd_last_error.length()) {
+    extra["err"] = g_sd_last_error;
+  }
+  JsonObjectConst o = extra.as<JsonObjectConst>();
+  if (ok) {
+    g_log->log_info("sd", "sd_init_ok", "SD init OK", &o);
+  } else {
+    g_log->log_warn("sd", "sd_init_fail", "SD init failed", &o);
+  }
 }
 
 // M3: best-effort retention enforcement (delete logs older than configured days).
@@ -587,6 +613,7 @@ void wss_storage_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_cfg = cfg;
   g_log = log;
   g_status = WssStorageStatus{};
+  g_sd_last_error = "";
 
   // M3: logging hash chain default-enabled; config can disable.
   if (g_cfg) {
@@ -607,6 +634,7 @@ void wss_storage_begin(WssConfigStore* cfg, WssEventLogger* log) {
 
 #if !WSS_FEATURE_SD
   g_status.feature_enabled = false;
+  g_status.sd_enabled_cfg = false;
   g_status.pinmap_configured = false;
   g_status.sd_status = "DISABLED";
   g_status.fallback_active = true;
@@ -615,12 +643,34 @@ void wss_storage_begin(WssConfigStore* cfg, WssEventLogger* log) {
 #else
   g_status.feature_enabled = true;
 
-  if (WSS_PIN_SD_CS < 0) {
+  bool sd_enabled = true;
+  int sd_cs_gpio = 13;
+  if (g_cfg) {
+    sd_enabled = g_cfg->doc()["sd_enabled"] | true;
+    sd_cs_gpio = g_cfg->doc()["sd_cs_gpio"] | 13;
+  }
+  g_status.sd_enabled_cfg = sd_enabled;
+  g_status.sd_cs_gpio = sd_cs_gpio;
+
+  if (!sd_enabled) {
+    g_status.pinmap_configured = false;
+    g_status.sd_status = "DISABLED";
+    g_status.fallback_active = true;
+    g_status.active_backend = "flash";
+    if (g_log) g_log->log_warn("sd", "sd_disabled", "SD disabled by config");
+    g_sd_last_error = "sd_disabled_cfg";
+    emit_sd_init_log(false);
+    return;
+  }
+
+  if (sd_cs_gpio < 0) {
     g_status.pinmap_configured = false;
     g_status.sd_status = "DISABLED";
     g_status.fallback_active = true;
     g_status.active_backend = "flash";
     if (g_log) g_log->log_warn("sd", "sd_disabled", "SD disabled: pin map not configured");
+    g_sd_last_error = "sd_cs_unset";
+    emit_sd_init_log(false);
     return;
   }
 
@@ -632,8 +682,10 @@ void wss_storage_begin(WssConfigStore* cfg, WssEventLogger* log) {
 
   if (ok) {
     emit_sd_status_log("SD mounted");
+    emit_sd_init_log(true);
   } else {
     emit_sd_status_log("SD not mounted; using fallback ring");
+    emit_sd_init_log(false);
   }
 #endif
 }
@@ -650,7 +702,7 @@ void wss_storage_loop() {
   g_status.fallback_active = true;
   return;
 #else
-  if (!g_status.feature_enabled || !g_status.pinmap_configured) {
+  if (!g_status.feature_enabled || !g_status.pinmap_configured || !g_status.sd_enabled_cfg) {
     g_status.active_backend = "flash";
     g_status.fallback_active = true;
     return;
