@@ -646,6 +646,7 @@
       for (const row of rows) {
         addKv(row.label, row.value);
       }
+      addLabel('If hardware does not respond after changing pins, reboot the device to reinitialize drivers.');
       return;
     }
   }
@@ -822,6 +823,27 @@
     URL.revokeObjectURL(url);
   }
 
+  async function downloadConfigRedacted() {
+    setText('configExportHint', '');
+    const r = await fetch('/api/config', { headers: hdrs(), cache: 'no-store' });
+    if (!r.ok) {
+      const msg = r.status === 403 ? 'Admin mode required.' : 'Config download failed.';
+      setText('configExportHint', msg);
+      return;
+    }
+    const text = await r.text();
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'esp32-nfc-security-config-redacted.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setText('configExportHint', 'Config downloaded.');
+  }
+
   function setOtaFileInfo(file) {
     if (!file) {
       setText('otaFileName', '—');
@@ -944,6 +966,10 @@
     localStorage.removeItem('wss_admin_token');
     await refreshStatus();
     await refreshEvents();
+  });
+
+  on($('btnConfigExport'), 'click', async () => {
+    await downloadConfigRedacted();
   });
 
   on($('btnArm'), 'click', async () => {
