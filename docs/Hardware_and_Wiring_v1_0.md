@@ -75,6 +75,15 @@ Security:
 Default recommended pin map:
 - Recommended defaults are defined in `Wiring_Instructions_DevKitV1_v1_0.md`.
 
+## Pin Allowlist Policy (DevKit V1)
+
+The Setup Wizard enforces a conservative, board-specific allowlist for runtime pin selection:
+- GPIO34-39 are input-only and are valid only for input roles (for example, NFC IRQ); they are invalid for TX/CS/RST/outputs.
+- CS and RST must be output-capable pins.
+- TX must be an output-capable pin.
+- Optional pins set to "Not used" do not claim a GPIO.
+- Duplicate assignments block completion only when the conflict is provable.
+
 ## 5) Output Driver Requirements
 
 Horn and light likely exceed ESP32 GPIO current.
