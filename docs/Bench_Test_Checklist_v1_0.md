@@ -198,6 +198,59 @@ G6. FAULT dominance.
 - Induce fault (e.g., disconnect RTC or SD per policy).
 - Expected: FAULT shown; logged; behavior matches policy.
 
+## M7.3 Addendum (M7.3)
+
+All steps below are AP-mode friendly and require no internet access.
+
+M7.3-1. Setup Wizard persistence across reboot.
+- Steps:
+  - In `/setup`, set admin password and change one non-default setting (e.g., Storage: set SD CS to a non-default value).
+  - Complete setup, then reboot (power cycle).
+- Expected: setup remains complete; saved values persist (e.g., SD CS shows the configured value).
+- Failure signals: setup required again; values revert to defaults; save failure shown.
+- Notes: no secrets should be shown or logged.
+
+M7.3-2. SD enable/disable + CS pin.
+- Steps:
+  - In Storage step, disable SD logging, save, then reboot.
+  - Verify `/api/status` shows SD disabled and flash fallback active.
+  - Re-enable SD logging with CS default (13), save, then reboot.
+- Expected: SD disabled shows `sd_status=DISABLED`; when enabled, SD init logs `sd_init_ok` if card present.
+- Failure signals: `sd_init_fail` with no safe error code; SD enabled but always stuck DISABLED.
+- Notes: if SD is missing, `sd_init_fail` should be logged with a safe error code and no secrets.
+
+M7.3-3. PN532 SPI.
+- Steps:
+  - In Inputs step, set NFC CS to default (27); set IRQ/RST to Not used if supported; save, then reboot.
+  - Scan a tag.
+- Expected: `/api/status` shows NFC health_state ok; scan works.
+- Failure signals: health_state fault/unknown; scan never registers.
+- Notes: logs must not contain raw NFC UID.
+
+M7.3-4. LD2410B UART.
+- Steps:
+  - Select LD2410B UART and set RX/TX to defaults (16/17), save, then reboot.
+  - Verify health transitions to ok after data is seen.
+  - Swap RX/TX as a negative test, save, then reboot.
+- Expected: health ok when data is seen; with swapped pins health remains unknown/fault.
+- Failure signals: no health change with valid wiring; parse errors logged with raw frames.
+- Notes: parse_errors may increase when malformed data is seen; raw frames must not be logged.
+
+M7.3-5. Pin Map conflicts.
+- Steps:
+  - Create a provable conflict (e.g., set SD CS equal to NFC CS), save and refresh status.
+  - Go to Review step.
+- Expected: "Complete setup" remains hidden and a clear conflict message is shown.
+- Failure signals: completion allowed with a provable conflict; ambiguous warning without specific pins.
+- Notes: only provable conflicts should block completion.
+
+M7.3-6. Admin boundaries sanity.
+- Steps:
+  - If Config export or Factory Restore is not present in this build, mark N/A for this slice.
+- Expected: N/A is recorded when features are absent.
+- Failure signals: steps added for features that do not exist in the build.
+- Notes: do not invent steps for missing features.
+
 G7. Web control endpoints are no longer stubs (M4).
 - Enter Admin Config Mode.
 - Call: `POST /api/control/arm`, `.../disarm`, `.../silence`.
