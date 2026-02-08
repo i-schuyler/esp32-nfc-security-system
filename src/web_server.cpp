@@ -1020,7 +1020,13 @@ static void handle_factory_restore() {
 
   g_admin.clear();
   g_log->log_warn("ui", "factory_restore", "factory restore completed");
-  server.send(200, "application/json", "{\"ok\":true}");
+  StaticJsonDocument<64> out;
+  out["ok"] = true;
+  out["rebooting"] = true;
+  send_json(200, out);
+  delay(200);
+  esp_restart();
+  return;
 }
 
 static bool web_controls_enabled() {

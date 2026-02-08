@@ -1104,6 +1104,7 @@
       } else {
         state.adminToken = '';
         localStorage.removeItem('wss_admin_token');
+        setText('factoryError', 'Factory restore complete. Rebooting... Reconnect to the device Wi-Fi.');
       }
       await refreshStatus();
       await refreshEvents();
