@@ -73,19 +73,14 @@ void wss_time_begin(WssEventLogger* log) {
 #else
   g_time_status.feature_enabled = true;
 
-  // Pin map must be explicitly configured to avoid inventing wiring.
-  if (WSS_PIN_I2C_SDA < 0 || WSS_PIN_I2C_SCL < 0) {
-    g_time_status.pinmap_configured = false;
-    g_time_status.status = "DISABLED";
-    bool tv = false;
-    g_time_status.now_iso8601_utc = wss_time_now_iso8601_utc(tv);
-    g_time_status.time_valid = tv;
-    if (g_log) g_log->log_warn("time", "rtc_disabled", "RTC disabled: pin map not configured");
-    return;
-  }
-
   g_time_status.pinmap_configured = true;
-  Wire.begin(WSS_PIN_I2C_SDA, WSS_PIN_I2C_SCL);
+  int sda = WSS_PIN_I2C_SDA;
+  int scl = WSS_PIN_I2C_SCL;
+  if (sda < 0 || scl < 0) {
+    sda = 21;
+    scl = 22;
+  }
+  Wire.begin(sda, scl);
 
   if (!i2c_probe(0x68) || !g_rtc.begin()) {
     g_time_status.rtc_present = false;

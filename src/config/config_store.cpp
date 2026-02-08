@@ -244,6 +244,8 @@ void WssConfigStore::set_defaults() {
   root["enclosure1_active_level"] = "high";
 
   // Storage
+  root["sd_enabled"] = true;
+  root["sd_cs_gpio"] = 13;
   root["sd_required"] = false;
   root["log_retention_days"] = 365;
   root["hash_chain_logs"] = true;
@@ -331,6 +333,10 @@ bool WssConfigStore::validate_or_recover(String& err) {
 
   if (!root.containsKey("enclosure1_pull") || !root["enclosure1_pull"].is<const char*>()) root["enclosure1_pull"] = "pullup";
   if (!root.containsKey("enclosure1_active_level") || !root["enclosure1_active_level"].is<const char*>()) root["enclosure1_active_level"] = "high";
+
+  if (!root["sd_enabled"].is<bool>()) root["sd_enabled"] = true;
+  if (!root["sd_cs_gpio"].is<long>()) root["sd_cs_gpio"] = 13;
+  if (!root["sd_required"].is<bool>()) root["sd_required"] = false;
 
   return true;
 }

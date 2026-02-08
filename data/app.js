@@ -8,6 +8,7 @@
   const PN532_CS_SAFE_PINS = [16, 17, 25, 26, 27, 32, 33];
   const PN532_RST_SAFE_PINS = PN532_CS_SAFE_PINS.slice();
   const PN532_IRQ_SAFE_PINS = [32, 33, 34, 35, 36, 39];
+  const SD_CS_SAFE_PINS = [13, 16, 17, 25, 26, 27, 32, 33];
 
   const state = {
     adminToken: localStorage.getItem('wss_admin_token') || '',
@@ -20,6 +21,7 @@
     motionKind: 'gpio',
     ld2410b: { rx: 16, tx: 17, baud: LD2410B_DEFAULT_BAUD },
     nfc: { iface: 'spi', cs: 27, irq: 32, rst: 33 },
+    sd: { enabled: true, cs: 13 },
   };
   const APP_PAGE = (window.APP_PAGE || 'main');
   const isSetupPage = APP_PAGE === 'setup';
@@ -257,6 +259,7 @@
   function storageStatusText(storage) {
     if (!storage) return 'Unknown';
     const status = storage.status || storage.sd_status || '';
+    if (status === 'DISABLED') return 'SD Disabled (Using Flash Fallback)';
     if (status === 'OK') return 'SD OK';
     if (storage.fallback_active) return 'SD Missing (Using Flash Fallback)';
     if (status.length) return `SD ${status}`;
@@ -388,6 +391,22 @@
 
     if (step === 'storage') {
       addLabel('Logs are stored on SD when available.');
+      addCheckbox('wiz_sd_enabled', 'Enable SD logging');
+      addLabel('Not using SD? Disable SD logging to use flash ring.');
+      const sdEnabled = $('wiz_sd_enabled');
+      if (sdEnabled) sdEnabled.checked = state.sd.enabled !== false;
+      const csDefault = SD_CS_SAFE_PINS.includes(state.sd.cs) ? state.sd.cs : 13;
+      addSelect('wiz_sd_cs', 'SD CS (SPI)', SD_CS_SAFE_PINS.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })), String(csDefault));
+      const sdCs = $('wiz_sd_cs');
+      if (sdEnabled && sdCs) {
+        sdCs.disabled = !sdEnabled.checked;
+        sdEnabled.addEventListener('change', () => {
+          sdCs.disabled = !sdEnabled.checked;
+        });
+      }
       addCheckbox('wiz_sd_required', 'Require SD for normal operation');
       addInput('wiz_log_retention_days', 'Log retention (days)', 'number', '365');
       addLabel('SD: Unknown until detected.');
@@ -556,6 +575,10 @@
     setText('network', networkText(j));
 
     const s = j.storage || {};
+    state.sd = {
+      enabled: (s.sd_enabled !== undefined) ? s.sd_enabled : true,
+      cs: (s.sd_cs_gpio !== undefined) ? s.sd_cs_gpio : 13,
+    };
     setText('storageStatus', storageStatusText(s));
     setText('storageBackend', asUnknown(s.active_backend));
     if (typeof j.flash_fs_ok === 'boolean') {
@@ -727,6 +750,8 @@
       }
     }
     if (step === 'storage') {
+      if ($('wiz_sd_enabled')) data.sd_enabled = !!$('wiz_sd_enabled').checked;
+      if ($('wiz_sd_cs')) data.sd_cs_gpio = parseInt($('wiz_sd_cs').value || '13', 10) || 13;
       data.sd_required = !!$('wiz_sd_required').checked;
       data.log_retention_days = parseInt($('wiz_log_retention_days').value || '365', 10) || 365;
     }
