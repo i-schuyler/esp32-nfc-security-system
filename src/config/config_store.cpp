@@ -393,7 +393,7 @@ bool WssConfigStore::verify_admin_password(const String& candidate) const {
 }
 
 bool WssConfigStore::is_secret_key(const String& key) const {
-  return key == "wifi_sta_password" || key == "wifi_ap_password" || key == "admin_web_password_hash";
+  return key == "wifi_sta_ssid" || key == "wifi_sta_password" || key == "wifi_ap_password";
 }
 
 String WssConfigStore::sha256_hex(const String& s) {
@@ -419,6 +419,9 @@ void WssConfigStore::to_redacted_json(JsonDocument& out) const {
   JsonObject o = out.to<JsonObject>();
   for (JsonPairConst kv : _doc.as<JsonObjectConst>()) {
     String key = kv.key().c_str();
+    if (key == "admin_web_password_hash") {
+      continue;
+    }
     if (is_secret_key(key)) {
       o[key] = "***";
     } else {
