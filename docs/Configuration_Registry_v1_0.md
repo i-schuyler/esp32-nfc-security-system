@@ -53,11 +53,13 @@ This doc defines all user-adjustable parameters, their meaning, ranges, defaults
 
 ### Alarm Outputs
 - `silenced_duration_s` (int, default 180)
+- `horn_active_low` (bool, default false) — when true, GPIO LOW = ON
+- `light_active_low` (bool, default false) — when true, GPIO LOW = ON
 - `horn_enabled` (bool, default true)
 - `light_enabled` (bool, default true)
 - `horn_pattern` (enum, default steady)
-- `light_pattern` (enum, default steady)
-- `silenced_light_pattern` (enum, default steady)
+- `light_pattern` (enum: off|steady|strobe, default steady)
+- `silenced_light_pattern` (enum: off|steady|strobe, default steady)
 
 ### Sensors
 - `required_primary_sensor` (enum: motion|door, default motion)
