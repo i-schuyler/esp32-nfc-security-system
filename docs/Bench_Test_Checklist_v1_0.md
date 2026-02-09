@@ -251,6 +251,12 @@ M7.3-6. Admin boundaries sanity.
 - Failure signals: steps added for features that do not exist in the build.
 - Notes: do not invent steps for missing features.
 
+M7.3-7. Factory restore reboot/reconnect.
+- Steps:
+  - Admin Authenticated, hold to confirm Factory Restore.
+- Expected: UI shows rebooting message; device disconnects; reconnect to AP/STA; `/` redirects to `/setup` after reboot.
+- Failure signals: no reboot; UI stuck; secrets shown/logged.
+
 G7. Web control endpoints are no longer stubs (M4).
 - Enter Admin Config Mode.
 - Call: `POST /api/control/arm`, `.../disarm`, `.../silence`.

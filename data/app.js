@@ -1039,7 +1039,9 @@
       const j = await r.json();
       if (j && j.message) msg = j.message;
       if (j && j.ok) {
-        setText('otaResult', msg || 'Rebooting now. Reconnect to the device Wi-Fi.');
+        setText('otaResult', msg || 'Rebooting now. Device will disconnect. Reconnect to the device Wi-Fi.');
+        setDisabled($('btnOtaUpload'), true);
+        setDisabled($('otaFile'), true);
         return;
       }
       if (j && j.error && !msg) msg = `Error: ${j.error}`;
@@ -1104,7 +1106,8 @@
       } else {
         state.adminToken = '';
         localStorage.removeItem('wss_admin_token');
-        setText('factoryError', 'Factory restore complete. Rebooting... Reconnect to the device Wi-Fi.');
+        setText('factoryError', 'Factory restore complete. Device will disconnect. Reconnect to the device Wi-Fi.');
+        setDisabled(btn, true);
       }
       await refreshStatus();
       await refreshEvents();
