@@ -235,8 +235,7 @@
   }
 
   function saveFailedMessage(detail) {
-    if (detail) return `Save failed. Settings were not saved. (${detail})`;
-    return 'Save failed. Settings were not saved.';
+    return 'Settings could not be saved to flash. Try Save again. If it still fails, reboot the device and try again.';
   }
 
   function asUnknown(v) {
