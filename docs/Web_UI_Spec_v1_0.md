@@ -130,6 +130,27 @@ V1 requirement:
 7) **Outputs** (test horn/light; set default patterns)
 8) **Review + Complete** (summary + final validation; marks setup complete)
 
+#### Step 5: Inputs (NFC + Sensors) — First Admin NFC card bootstrap (reader present)
+(Setup Wizard Step 5 in the current flow; corresponds to Step 3 in the M7.2 optimized order.)
+
+Why you're here: this step enables NFC input and sets up sensors so the system can recognize Admin vs User cards.
+What to do next: configure the NFC reader, authenticate as Admin, then scan the first Admin card twice to confirm.
+
+Flow (reader present):
+- Enable/configure the NFC reader (module selection + pins). Status line: "NFC: OK / Unavailable / Degraded".
+- Enter the admin password to start an **Admin Authenticated** session for setup bootstrap.
+- Tap "Start Admin-card scan" to open a short provisioning window.
+- Scan the Admin card once to capture it.
+- Scan the same card again to confirm.
+
+Confirmation rules:
+- Show role-only result: Admin / User / Unknown.
+- Never display or log UID/taghash.
+
+If the reader is missing or unhealthy:
+- Show "NFC: Unavailable/Degraded/Unknown" with guidance.
+- Allow save/continue without blocking the wizard; the scan flow becomes available once NFC is healthy.
+
 All wizard actions must be logged as `config_change` or `setup_step`.
 
 ### M7.2 Setup Wizard Optimization Contract (M7.2)
