@@ -87,7 +87,8 @@ Guided helper line (only when relevant):
 
 ## 6) Admin gating UX (additive NFC enable + password)
 Behavior:
-- Admin NFC scan opens eligibility window (time-limited).
+- When setup is complete, at least one Admin card exists, and the NFC reader is healthy: an Admin NFC scan opens the eligibility window (time-limited).
+- During setup (setup not complete), or before the first Admin card exists, or when the reader is unhealthy: allow admin password entry in the Setup Wizard without an eligibility window; copy should state this is for first Admin card bootstrap.
 - Password still required to become Admin Authenticated.
 
 UI presentation banner (only when eligible/authenticated):
@@ -104,7 +105,8 @@ When Admin Authenticated:
 
 Login copy:
 - Header: “Admin password”
-- Helper: “Admin access requires a recent Admin NFC scan.”
+- Helper (normal): “Admin access requires a recent Admin NFC scan.”
+- Helper (setup bootstrap): “Enter the admin password to add the first Admin card.”
 - Errors:
   - “Admin window expired. Scan an Admin card again.”
   - “Incorrect password.”
@@ -156,7 +158,8 @@ Example Time & RTC step:
 - “RTC: Detected / Not detected”
 
 # NFC additive admin mode (M7 decision)
-- Admin NFC scan opens Admin Eligible window.
+- Admin NFC scan opens Admin Eligible window only when setup is complete, at least one Admin card exists, and the NFC reader is healthy.
+- During setup, admin password entry in the Setup Wizard can start Admin Authenticated for first-card bootstrap (no eligibility window).
 - Password still required for Admin Authenticated.
 - UI distinguishes Eligible vs Authenticated with countdowns.
 - No raw UID displayed or logged.

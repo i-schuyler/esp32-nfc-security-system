@@ -43,11 +43,16 @@ Principle: default UI is read-only.
 Admin actions require an explicit **Admin Config Mode** session.
 
 ### Admin Config Mode (Proposed)
-- Entered via authorized NFC admin action when NFC is present.
-- Also entered via web-based admin password (Setup Wizard) when NFC is absent/disabled.
+- Admin Config Mode means an **Admin Authenticated** session is active (time-limited).
+- NFC eligibility gating MUST ONLY apply when ALL are true:
+  - setup is complete
+  - at least one Admin card exists in the allowlist
+  - the NFC reader is present and healthy
+- When all are true: an Admin NFC scan opens the **Admin Eligible** window; password is still required to become Admin Authenticated.
+- During setup (setup not complete), or when no Admin card exists, or when the reader is unhealthy: the Setup Wizard MUST allow admin password entry even if the NFC reader is attached, to bootstrap the first Admin card.
 - Expires after N minutes of inactivity (configurable).
 - While active, UI shows a banner: “Admin Mode Active (expires in …)”.
-- All admin actions are logged.
+- All admin actions are logged. Never display or log UID/taghash/password/token.
 
 Admin-only actions:
 - Change Wi‑Fi SSID/password
@@ -55,8 +60,12 @@ Admin-only actions:
 - Change sensor sensitivity/calibration
 - OTA firmware update (optional: require admin mode)
 
+Provisioning endpoints (card allowlist changes):
+- Must require Admin Authenticated (admin token) in all cases, including setup.
+- Never display or log UID/taghash/password/token.
+
 **Decision:** which admin actions require the NFC gate vs just a web password.
-For V1, the minimum requirement is: sensitive actions require Admin Config Mode, and Admin Config Mode can be entered without NFC via web-based password.
+For V1, the minimum requirement is: sensitive actions require Admin Config Mode, and NFC eligibility gating is additive only when the three prerequisites above are true.
 
 ## 5) Changing Wi‑Fi Name/Password
 
