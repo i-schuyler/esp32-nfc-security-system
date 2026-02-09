@@ -399,15 +399,46 @@ L8. Corrupt config recovery (negative path).
 - Corrupt/erase config storage (NVS) and reboot.
 - Expected: device restores defaults, requires Setup Wizard, and logs a `config_corrupt_or_reset` (or equivalent) event.
 
+L9. Setup Wizard Inputs — first Admin NFC bootstrap (reader present).
+Preconditions:
+- `setup_required == true` (setup not complete).
+- NFC reader attached and healthy (NFC status shows OK).
+- Admin password set in Step 1.
+- A new card not in the allowlist is available.
+Actions:
+- In `/setup`, open the "Inputs (NFC + Sensors)" step.
+- Enter the admin password and tap "Start Admin-card scan".
+- Scan the new card once.
+- Scan the same card again to confirm.
+- Complete setup, then verify post-setup gating:
+  - With setup complete + at least one Admin in allowlist + reader healthy: admin password login without eligibility is rejected; scanning an Admin card opens eligibility, then password login succeeds.
+  - With setup complete but reader unhealthy/unavailable: admin password login works without eligibility.
+  - With setup complete but allowlist has zero Admin (remove the last Admin via provisioning in Admin mode): admin password login works without eligibility.
+Expected:
+- During setup, admin password login works even with reader attached; no NFC eligibility scan is required.
+- Provisioning starts only after Admin Authenticated; UI prompts a scan, then a confirmation scan.
+- Confirmation feedback is role-only ("Admin"/"User"/"Unknown"); no UID/taghash is shown.
+- Post-setup gating engages only when all three prerequisites are true.
+- UI and logs never reveal UID/taghash/password/token.
+Failure signals:
+- Setup login is blocked by missing NFC eligibility while setup is not complete.
+- Provisioning starts without Admin Authenticated.
+- Any UID/taghash/password/token appears in UI or logs.
+- Eligibility gate is enforced when any prerequisite is false, or not enforced when all are true.
+
 ## M7 Addendum (M7)
 
 M7.1 Admin eligibility + password (two-step, offline AP).
+Preconditions:
+- `setup_required == false` (setup complete).
+- At least one Admin card exists in the allowlist.
+- NFC reader present and healthy.
 - Connect to device AP; open the UI.
 - Scan a valid Admin NFC tag.
 - Expected: Status shows `Admin: Eligible (<remaining>)`.
 - Enter Admin password.
 - Expected: Status shows `Admin: Authenticated (<remaining>)`; admin-only sections become visible.
-- Failure signal: password alone grants admin without an eligible window, or eligible window appears without NFC.
+- Failure signal: when the preconditions are true, password alone grants admin without an eligible window, or eligible window appears without NFC.
 
 ## M7.1 Addendum (M7.1) — /setup Route Gating
 
