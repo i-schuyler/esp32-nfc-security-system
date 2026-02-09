@@ -18,6 +18,13 @@ Purpose:
 - Proposed fix: treat `docs/Web_UI_Spec_v1_0.md` Section 8 "Routing + gating (M7.1)" as the single source for `/setup` behavior.
 - Status: open
 
+## DL3 — 2026-02-09 — First Admin NFC bootstrap gating clarified [RESOLVED]
+- Symptom: setup could deadlock when a reader is attached but no Admin card exists yet.
+- Impact: operator cannot complete setup or add the first Admin card.
+- Proposed fix: allow admin password login during setup and when no Admin card exists; require NFC eligibility only when setup is complete, an Admin card exists, and the reader is healthy.
+- No silent drift: no new endpoints/flags/schema; admin token storage is memory-only in UI.
+- Status: resolved
+
 ## 2026-01-28 — Drift Notes and Resolutions
 
 - Drift: README referenced outdated layout (e.g., UI/firmware folder expectations).  

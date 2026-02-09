@@ -29,3 +29,8 @@ Rules:
 - [LOCKED] Setup Wizard is served at `/setup` as a separate HTML page.
 - [LOCKED] `/setup` provides a safe escape hatch (no privileged actions).
 - [LOCKED] Re-run setup requires Admin Authenticated (not merely Admin Eligible).
+
+## D4 — 2026-02-09 — Admin login gating + first Admin bootstrap [LOCKED]
+- [LOCKED] NFC eligibility gating applies only when setup is complete, at least one Admin card exists in the allowlist, and the reader is present and healthy.
+- [LOCKED] During setup, or when no Admin card exists, or when the reader is unhealthy, admin password login is allowed to bootstrap the first Admin card.
+- [LOCKED] Provisioning remains Admin Authenticated (admin token required).
