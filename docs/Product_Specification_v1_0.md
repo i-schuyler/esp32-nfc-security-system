@@ -29,6 +29,15 @@ Source: accepted proposal.
 - TRIGGERED is latched until cleared.
 - TRIGGERED activates horn + light patterns (configurable).
 - SILENCED (if enabled) disables horn but preserves alarm memory.
+- Output polarity is configurable per channel:
+  - `horn_active_low` / `light_active_low` (bool, default false).
+  - `active_low=false` means GPIO HIGH = ON, GPIO LOW = OFF.
+  - `active_low=true` means GPIO LOW = ON, GPIO HIGH = OFF.
+  - Defaults are active-high to match common low-side transistor/MOSFET drivers; outputs still default OFF on boot.
+- Light mode selection is a pattern choice:
+  - `light_pattern` / `silenced_light_pattern` (enum: off|steady|strobe, default steady).
+  - Strobe is a pattern option (not a separate capability toggle); never auto-strobe by default.
+- Safety note: inverted polarity can energize a load when it should be OFF; confirm polarity and light mode in bench test before arming.
 
 ### F3 — Incident Logging
 - Every event is logged per `Event_Log_Schema`.

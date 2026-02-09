@@ -339,6 +339,19 @@ I4. Output policy linkage to state machine (M4).
 - Expected: TRIGGERED uses `horn_pattern`/`light_pattern` (default steady);
   SILENCED forces horn OFF and uses `silenced_light_pattern` for light.
 
+I5. Output polarity (active-low vs active-high).
+- In the Setup Wizard Outputs step, toggle `horn_active_low` and `light_active_low` as needed for the driver board.
+- Use test mode to energize each output briefly.
+- Expected: OFF means physically off; ON means physically on, regardless of polarity setting.
+- Failure signal: output is on when it should be off, or polarity selection has no effect.
+
+I6. Light mode selection (steady vs strobe).
+- Set `light_pattern` to steady and trigger TRIGGERED; observe light.
+- Set `light_pattern` to strobe and repeat.
+- If `silenced_light_pattern` is supported, repeat in SILENCED.
+- Expected: steady is continuous; strobe is pulsed; off remains off if selected.
+- Failure signal: strobe occurs when steady is selected, or light remains on when off is selected.
+
 ## J) Logs, downloads, and tamper-aware properties
 
 J1. Download logs.

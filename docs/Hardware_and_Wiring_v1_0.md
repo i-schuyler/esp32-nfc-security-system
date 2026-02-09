@@ -92,6 +92,12 @@ Contract:
 - GPIO drives a transistor/MOSFET or relay module rated for load.
 - Include flyback diode for inductive loads (relay/horn coil).
 - Outputs default OFF on boot until firmware has initialized state.
+- Output polarity must match the driver board:
+  - `horn_active_low` / `light_active_low` (bool, default false).
+  - `active_low=false` means GPIO HIGH = ON, GPIO LOW = OFF.
+  - `active_low=true` means GPIO LOW = ON, GPIO HIGH = OFF.
+  - Many relay boards are active-low; many low-side MOSFET drivers are active-high.
+  - Bench test polarity before arming; inverted polarity can energize outputs unexpectedly.
 
 ## 6) Tamper Signals
 

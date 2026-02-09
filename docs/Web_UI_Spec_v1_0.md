@@ -127,7 +127,7 @@ V1 requirement:
 4) **Storage** (SD detected? logging status; choose retention; M7.3 includes SD SPI pin assignment)
 5) **NFC** (add Admin card(s), add User card(s) if desired; confirm permissions; M7.3 includes PN532 SPI module selection + pin assignment, with optional IRQ/RST)
 6) **Sensors** (enable motion/door/tamper; basic calibration/sensitivity; M7.3 motion selection includes LD2410B UART pin assignment)
-7) **Outputs** (test horn/light; set default patterns)
+7) **Outputs** (test horn/light; set default patterns; set output polarity + light mode)
 8) **Review + Complete** (summary + final validation; marks setup complete)
 
 #### Step 5: Inputs (NFC + Sensors) — First Admin NFC card bootstrap (reader present)
@@ -153,6 +153,24 @@ If the reader is missing or unhealthy:
 
 All wizard actions must be logged as `config_change` or `setup_step`.
 
+#### Step 7: Outputs — Polarity + Light mode
+
+Why you're here: confirm outputs are wired safely and choose the light behavior.
+What to do next: set polarity, select light mode, then run a short test to confirm.
+
+Configuration items:
+- `horn_active_low` (bool, default false): OFF=LOW, ON=HIGH.
+- `light_active_low` (bool, default false): OFF=LOW, ON=HIGH.
+- If `*_active_low=true`, invert: ON=LOW, OFF=HIGH.
+- Light mode selection (single choice per context):
+  - `light_pattern` (Triggered): off | steady | strobe (default steady).
+  - `silenced_light_pattern` (Silenced): off | steady | strobe (default steady).
+
+Guidance:
+- If a relay board is active-low, enable the corresponding `*_active_low`.
+- Strobe is an explicit selection; never default to strobe.
+- Run "Test horn/light" after changes and confirm outputs are OFF at idle before arming.
+
 ### M7.2 Setup Wizard Optimization Contract (M7.2)
 
 A) Auto-refresh policy
@@ -166,7 +184,7 @@ B) Step order (critical first)
 - Step 3: Inputs (NFC + Sensors); merged step with guided instructions; includes pin assignment (NFC + sensors), PN532 SPI module selection for M7.3, and LD2410B UART pin selection; never blocked by missing hardware.
 - Step 4: Time & RTC; includes RTC pin selection for M7.3.
 - Step 5: Storage; includes SD SPI pin selection for M7.3.
-- Step 6: Outputs.
+- Step 6: Outputs; includes output polarity and light mode selection.
 - Step 7: Review & Complete.
 - Hardware steps must never be blocked by missing hardware; show "Unknown" with guided instructions.
 
