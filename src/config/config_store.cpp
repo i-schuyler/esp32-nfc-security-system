@@ -544,61 +544,96 @@ bool WssConfigStore::save(String& err) {
     return false;
   }
 
-  bool ok = false;
-  if (out.length() <= kCfgSingleMaxBytes) {
-    ok = prefs.putString(kPrefsKeyCfg, out) > 0;
-    if (ok) {
-      uint32_t prior_chunks = prefs.getUInt(kPrefsKeyCfgChunks, 0);
-      if (prior_chunks > 0) clear_cfg_chunks(prefs, prior_chunks);
-    }
-  }
-
-  if (!ok) {
-    uint32_t chunk_count = (out.length() + kCfgChunkBytes - 1) / kCfgChunkBytes;
-    if (chunk_count == 0 || chunk_count > kCfgChunkMax) {
-      prefs.end();
-      err = "cfg_too_large";
-      return false;
-    }
-
-    uint32_t prior_chunks = prefs.getUInt(kPrefsKeyCfgChunks, 0);
-    prefs.putUInt(kPrefsKeyCfgChunks, 0);
-    bool chunk_ok = true;
-    for (uint32_t i = 0; i < chunk_count; i++) {
-      size_t start = i * kCfgChunkBytes;
-      size_t end = start + kCfgChunkBytes;
-      if (end > out.length()) end = out.length();
-      String part = out.substring(start, end);
-      String key = cfg_chunk_key(i);
-      if (prefs.putString(key.c_str(), part) == 0) {
-        chunk_ok = false;
-        break;
+  auto write_config = [&](Preferences& target, String& write_err) -> bool {
+    bool ok = false;
+    if (out.length() <= kCfgSingleMaxBytes) {
+      ok = target.putString(kPrefsKeyCfg, out) > 0;
+      if (ok) {
+        uint32_t prior_chunks = target.getUInt(kPrefsKeyCfgChunks, 0);
+        if (prior_chunks > 0) clear_cfg_chunks(target, prior_chunks);
       }
     }
-    if (chunk_ok) {
-      if (prefs.putUInt(kPrefsKeyCfgChunks, chunk_count) == 0) {
-        chunk_ok = false;
+
+    if (!ok) {
+      uint32_t chunk_count = (out.length() + kCfgChunkBytes - 1) / kCfgChunkBytes;
+      if (chunk_count == 0 || chunk_count > kCfgChunkMax) {
+        write_err = "cfg_too_large";
+        return false;
       }
-    }
-    if (chunk_ok) {
-      prefs.remove(kPrefsKeyCfg);
-      if (prior_chunks > chunk_count) {
-        for (uint32_t i = chunk_count; i < prior_chunks; i++) {
-          String key = cfg_chunk_key(i);
-          prefs.remove(key.c_str());
+
+      uint32_t prior_chunks = target.getUInt(kPrefsKeyCfgChunks, 0);
+      target.putUInt(kPrefsKeyCfgChunks, 0);
+      bool chunk_ok = true;
+      for (uint32_t i = 0; i < chunk_count; i++) {
+        size_t start = i * kCfgChunkBytes;
+        size_t end = start + kCfgChunkBytes;
+        if (end > out.length()) end = out.length();
+        String part = out.substring(start, end);
+        String key = cfg_chunk_key(i);
+        if (target.putString(key.c_str(), part) == 0) {
+          chunk_ok = false;
+          break;
         }
       }
-      ok = true;
+      if (chunk_ok) {
+        if (target.putUInt(kPrefsKeyCfgChunks, chunk_count) == 0) {
+          chunk_ok = false;
+        }
+      }
+      if (chunk_ok) {
+        target.remove(kPrefsKeyCfg);
+        if (prior_chunks > chunk_count) {
+          for (uint32_t i = chunk_count; i < prior_chunks; i++) {
+            String key = cfg_chunk_key(i);
+            target.remove(key.c_str());
+          }
+        }
+        ok = true;
+      }
     }
+
+    if (!ok) {
+      write_err = "prefs_put_failed";
+      return false;
+    }
+    write_err = "";
+    return true;
+  };
+
+  String write_err;
+  bool ok = write_config(prefs, write_err);
+  if (!ok && write_err == "prefs_put_failed") {
+    if (_logger) _logger->log_warn("config", "cfg_save_recover", "config save failed; attempting recovery");
+    bool cleared = prefs.clear();
+    if (_logger) {
+      StaticJsonDocument<96> extra;
+      extra["action"] = "prefs_clear";
+      extra["result"] = cleared ? "ok" : "fail";
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      _logger->log_info("config", "cfg_save_recover_clear", "config save recovery cleared namespace", &o);
+    }
+    String retry_err;
+    bool retry_ok = write_config(prefs, retry_err);
+    if (_logger) {
+      StaticJsonDocument<96> extra;
+      extra["result"] = retry_ok ? "ok" : "fail";
+      JsonObjectConst o = extra.as<JsonObjectConst>();
+      if (retry_ok) {
+        _logger->log_info("config", "cfg_save_recover_ok", "config save recovery ok", &o);
+      } else {
+        _logger->log_error("config", "cfg_save_recover_fail", "config save recovery failed", &o);
+      }
+    }
+    if (retry_ok) {
+      prefs.end();
+      err = "";
+      return true;
+    }
+    write_err = retry_err;
   }
   prefs.end();
-
-  if (!ok) {
-    err = "prefs_put_failed";
-    return false;
-  }
-  err = "";
-  return true;
+  err = write_err;
+  return ok;
 }
 
 bool WssConfigStore::factory_reset(String& err) {
