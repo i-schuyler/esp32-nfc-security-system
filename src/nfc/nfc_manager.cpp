@@ -1162,6 +1162,8 @@ void wss_nfc_write_status_json(JsonObject out) {
 }
 
 bool wss_nfc_admin_gate_required() {
+  if (!g_cfg || !g_cfg->setup_completed()) return false;
+  if (!wss_nfc_allowlist_has_admin()) return false;
   WssNfcStatus st = wss_nfc_status();
   if (!st.feature_enabled || !st.enabled_cfg) return false;
   if (!st.reader_present) return false;

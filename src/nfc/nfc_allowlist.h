@@ -21,6 +21,7 @@ String wss_nfc_taghash(const uint8_t* uid, size_t uid_len);
 // Allowlist queries (provisioning arrives later).
 bool wss_nfc_allowlist_is_allowed(const String& taghash);
 WssNfcRole wss_nfc_allowlist_get_role(const String& taghash);
+bool wss_nfc_allowlist_has_admin();
 const char* wss_nfc_role_to_string(WssNfcRole role);
 
 // Provisioning operations.

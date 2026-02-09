@@ -145,6 +145,13 @@ WssNfcRole wss_nfc_allowlist_get_role(const String& taghash) {
   return WSS_NFC_ROLE_UNKNOWN;
 }
 
+bool wss_nfc_allowlist_has_admin() {
+  for (const auto& e : g_allowlist) {
+    if (e.role == WSS_NFC_ROLE_ADMIN) return true;
+  }
+  return false;
+}
+
 const char* wss_nfc_role_to_string(WssNfcRole role) {
   switch (role) {
     case WSS_NFC_ROLE_ADMIN:

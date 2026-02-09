@@ -11,7 +11,7 @@
   const SD_CS_SAFE_PINS = [13, 16, 17, 25, 26, 27, 32, 33];
 
   const state = {
-    adminToken: localStorage.getItem('wss_admin_token') || '',
+    adminToken: '',
     setupRequired: true,
     lastStep: 'welcome',
     adminMode: 'off',
@@ -22,6 +22,7 @@
     ld2410b: { rx: 16, tx: 17, baud: LD2410B_DEFAULT_BAUD },
     nfc: { iface: 'spi', cs: 27, irq: 32, rst: 33 },
     sd: { enabled: true, cs: 13 },
+    nfcProvision: { stage: 'idle', startScanMs: 0, firstScanMs: 0, confirmedRole: 'unknown' },
   };
   const APP_PAGE = (window.APP_PAGE || 'main');
   const isSetupPage = APP_PAGE === 'setup';
@@ -231,7 +232,6 @@
 
   function clearAdminSession() {
     state.adminToken = '';
-    localStorage.removeItem('wss_admin_token');
   }
 
   function saveFailedMessage(detail) {
@@ -263,6 +263,79 @@
     else if (health === 'unavailable' || health === 'disabled_cfg' || health === 'disabled_build') label = 'Unavailable';
     const prov = (nfc.provisioning_active === true) ? 'Yes' : (nfc.provisioning_active === false ? 'No' : 'Unknown');
     return `${label} (Provisioning enabled: ${prov})`;
+  }
+
+  function nfcWizardHealthText(nfc) {
+    if (!nfc) return 'NFC: Unknown';
+    const health = nfc.health || '';
+    let label = 'Degraded';
+    if (health === 'ok') label = 'OK';
+    else if (health === 'unavailable' || health === 'disabled_cfg' || health === 'disabled_build') label = 'Unavailable';
+    return `NFC: ${label}`;
+  }
+
+  function nfcRoleLabel(role) {
+    if (role === 'admin') return 'Admin';
+    if (role === 'user') return 'User';
+    return 'Unknown';
+  }
+
+  function updateNfcProvisionState(nfc) {
+    if (!nfc) return;
+    const lastScanMs = nfc.last_scan_ms || 0;
+    if (state.nfcProvision.stage === 'waiting_first') {
+      if (lastScanMs > state.nfcProvision.startScanMs && nfc.last_scan_result === 'ok') {
+        state.nfcProvision.stage = 'waiting_confirm';
+        state.nfcProvision.firstScanMs = lastScanMs;
+      }
+      return;
+    }
+    if (state.nfcProvision.stage === 'waiting_confirm') {
+      if (lastScanMs > state.nfcProvision.firstScanMs && nfc.last_scan_result === 'ok') {
+        state.nfcProvision.stage = 'confirmed';
+        state.nfcProvision.confirmedRole = nfc.last_role || 'unknown';
+      }
+    }
+  }
+
+  function updateNfcProvisionUi(nfc) {
+    const statusEl = $('wiz_nfc_admin_status');
+    if (!statusEl) return;
+    const healthEl = $('wiz_nfc_health');
+    if (healthEl) healthEl.textContent = nfcWizardHealthText(nfc);
+
+    if (!nfc || nfc.provisioning_active !== true) {
+      if (state.nfcProvision.stage !== 'idle' && state.nfcProvision.stage !== 'confirmed') {
+        state.nfcProvision.stage = 'idle';
+        state.nfcProvision.startScanMs = 0;
+        state.nfcProvision.firstScanMs = 0;
+        setText('wiz_nfc_admin_error', 'Provisioning ended. Start Admin-card scan again.');
+      }
+    }
+
+    const stage = state.nfcProvision.stage;
+    if (stage === 'waiting_first') {
+      const rem = (nfc && nfc.provisioning_remaining_s > 0)
+        ? ` (${nfc.provisioning_remaining_s}s remaining)` : '';
+      setText('wiz_nfc_admin_status', `Scan the Admin card now${rem}.`);
+      setText('wiz_nfc_admin_role', '');
+      return;
+    }
+    if (stage === 'waiting_confirm') {
+      const rem = (nfc && nfc.provisioning_remaining_s > 0)
+        ? ` (${nfc.provisioning_remaining_s}s remaining)` : '';
+      setText('wiz_nfc_admin_status', `Scan the same card again to confirm${rem}.`);
+      setText('wiz_nfc_admin_role', '');
+      return;
+    }
+    if (stage === 'confirmed') {
+      const role = nfcRoleLabel(state.nfcProvision.confirmedRole);
+      setText('wiz_nfc_admin_status', 'Admin card confirmed.');
+      setText('wiz_nfc_admin_role', `Role: ${role}`);
+      return;
+    }
+    setText('wiz_nfc_admin_status', 'Enter the admin password to start the Admin-card scan.');
+    setText('wiz_nfc_admin_role', '');
   }
 
   function storageStatusText(storage) {
@@ -527,8 +600,12 @@
     if (step === 'sensors') {
       addLabel('Inputs detect activity and authorize control.');
       addLabel('Enable at least one primary sensor.');
-      addLabel('NFC: Unknown until a reader is detected.');
       addLabel('Sensors: Unknown until configured.');
+      const nfcHealthLine = document.createElement('div');
+      nfcHealthLine.className = 'small';
+      nfcHealthLine.id = 'wiz_nfc_health';
+      nfcHealthLine.textContent = 'NFC: Unknown until a reader is detected.';
+      host.appendChild(nfcHealthLine);
       addLabel('NFC module: PN532 (SPI).');
       const csDefault = PN532_CS_SAFE_PINS.includes(state.nfc.cs) ? state.nfc.cs : 27;
       const irqDefault = PN532_IRQ_SAFE_PINS.includes(state.nfc.irq) ? state.nfc.irq : -1;
@@ -547,6 +624,74 @@
         label: `GPIO ${pin}`,
       })));
       addSelect('wiz_nfc_rst', 'NFC RST (optional)', rstOptions, String(rstDefault));
+
+      addLabel('Add the first Admin card to enable Admin access.');
+      addLabel('Enter the admin password, start the scan, then scan the same card twice to confirm.');
+      addInput('wiz_nfc_admin_password', 'Admin password (for first Admin card)', 'password');
+      const nfcAdminStart = document.createElement('button');
+      nfcAdminStart.id = 'wiz_nfc_admin_start';
+      nfcAdminStart.textContent = 'Start Admin-card scan';
+      host.appendChild(nfcAdminStart);
+      const nfcAdminStatus = document.createElement('div');
+      nfcAdminStatus.className = 'small';
+      nfcAdminStatus.id = 'wiz_nfc_admin_status';
+      host.appendChild(nfcAdminStatus);
+      const nfcAdminRole = document.createElement('div');
+      nfcAdminRole.className = 'small';
+      nfcAdminRole.id = 'wiz_nfc_admin_role';
+      host.appendChild(nfcAdminRole);
+      const nfcAdminError = document.createElement('div');
+      nfcAdminError.className = 'small muted';
+      nfcAdminError.id = 'wiz_nfc_admin_error';
+      host.appendChild(nfcAdminError);
+
+      on(nfcAdminStart, 'click', async () => {
+        setText('wiz_nfc_admin_error', '');
+        setText('wiz_nfc_admin_role', '');
+        const pwInput = $('wiz_nfc_admin_password');
+        const pw = (pwInput && pwInput.value) ? pwInput.value : '';
+        if (!pw.length) {
+          setText('wiz_nfc_admin_error', 'Admin password required.');
+          return;
+        }
+        const login = await jpost('/api/admin/login', { password: pw });
+        if (!login.ok) {
+          const err = (login.json && login.json.error) || login.status;
+          if (err === 'admin_password_not_set') {
+            setText('wiz_nfc_admin_error', 'Set the admin password in Step 1 first.');
+          } else if (err === 'admin_nfc_required') {
+            setText('wiz_nfc_admin_error', 'Scan an Admin card to enable login.');
+          } else if (err === 'invalid_password') {
+            setText('wiz_nfc_admin_error', 'Incorrect password.');
+          } else {
+            setText('wiz_nfc_admin_error', `Error: ${err}`);
+          }
+          return;
+        }
+        state.adminToken = login.json.token || '';
+        if (pwInput) pwInput.value = '';
+        const start = await jpost('/api/nfc/provision/start', { mode: 'add_admin' });
+        if (!start.ok) {
+          const err = (start.json && start.json.error) || start.status;
+          if (start.status === 403 && err === 'admin_token_invalid') {
+            clearAdminSession();
+            setText('wiz_nfc_admin_error', 'Admin session expired. Log in again.');
+          } else if (start.status === 403 && err === 'admin_required') {
+            clearAdminSession();
+            setText('wiz_nfc_admin_error', 'Admin Authenticated required.');
+          } else if (err === 'provision_start_failed') {
+            setText('wiz_nfc_admin_error', 'Provisioning could not start. Check the NFC reader.');
+          } else {
+            setText('wiz_nfc_admin_error', `Error: ${err}`);
+          }
+          return;
+        }
+        state.nfcProvision.stage = 'waiting_first';
+        state.nfcProvision.startScanMs = state.nfc.lastScanMs || 0;
+        state.nfcProvision.firstScanMs = 0;
+        state.nfcProvision.confirmedRole = 'unknown';
+        await refreshStatus();
+      });
 
       const motionKind = addSelect('wiz_motion_kind', 'Motion sensor type', [
         { value: 'gpio', label: 'GPIO motion inputs' },
@@ -711,6 +856,14 @@
         cs: (nfc.spi_cs_gpio !== undefined) ? nfc.spi_cs_gpio : 27,
         irq: (nfc.spi_irq_gpio !== undefined) ? nfc.spi_irq_gpio : -1,
         rst: (nfc.spi_rst_gpio !== undefined) ? nfc.spi_rst_gpio : -1,
+        lastScanMs: nfc.last_scan_ms || 0,
+        lastScanResult: nfc.last_scan_result || '',
+        lastRole: nfc.last_role || 'unknown',
+        provisioningActive: nfc.provisioning_active === true,
+        provisioningMode: nfc.provisioning_mode || 'none',
+        provisioningRemainingS: nfc.provisioning_remaining_s || 0,
+        health: nfc.health || '',
+        healthState: nfc.health_state || '',
       };
     }
     setText('nfcStatus', nfcHealthText(nfc));
@@ -765,6 +918,11 @@
     } else {
       setHidden($('wizardCard'), !state.setupRequired);
       setText('topNote', state.setupRequired ? 'Setup required.' : '');
+    }
+
+    if (isSetupPage) {
+      updateNfcProvisionState(nfc);
+      updateNfcProvisionUi(nfc);
     }
 
     await refreshConfig();
@@ -954,7 +1112,8 @@
       return;
     }
     state.adminToken = r.json.token || '';
-    localStorage.setItem('wss_admin_token', state.adminToken);
+    const pwField = $('adminPassword');
+    if (pwField) pwField.value = '';
     await refreshStatus();
     await refreshEvents();
   });
@@ -963,7 +1122,6 @@
     setText('adminError', '');
     await jpost('/api/admin/logout', {});
     state.adminToken = '';
-    localStorage.removeItem('wss_admin_token');
     await refreshStatus();
     await refreshEvents();
   });
@@ -1105,7 +1263,6 @@
         setText('factoryError', `Error: ${(r.json && r.json.error) || r.status}`);
       } else {
         state.adminToken = '';
-        localStorage.removeItem('wss_admin_token');
         setText('factoryError', 'Factory restore complete. Device will disconnect. Reconnect to the device Wi-Fi.');
         setDisabled(btn, true);
       }
