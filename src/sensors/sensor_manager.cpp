@@ -40,6 +40,12 @@ static int cfg_int(const char* k, int def) {
   return g_cfg->doc()[k] | def;
 }
 
+static int cfg_pin(const char* k, int def) {
+  int v = cfg_int(k, def);
+  if (v < 0) return -1;
+  return v;
+}
+
 static String cfg_str(const char* k, const char* def) {
   if (!g_cfg) return String(def);
   return String(g_cfg->doc()[k] | def);
@@ -396,11 +402,17 @@ static void rebuild_sensor_list() {
 
   bool enclosure = cfg_bool("enclosure_open_enabled", false);
 
-  add_sensor("motion", "motion1", WSS_PIN_MOTION_1, motion1);
-  add_sensor("motion", "motion2", WSS_PIN_MOTION_2, motion2);
-  add_sensor("door", "door1", WSS_PIN_DOOR_1, door1);
-  add_sensor("door", "door2", WSS_PIN_DOOR_2, door2);
-  add_sensor("enclosure_open", "enclosure1", WSS_PIN_ENCLOSURE_OPEN, enclosure);
+  int motion1_pin = cfg_pin("motion1_gpio", WSS_PIN_MOTION_1);
+  int motion2_pin = cfg_pin("motion2_gpio", WSS_PIN_MOTION_2);
+  int door1_pin = cfg_pin("door1_gpio", WSS_PIN_DOOR_1);
+  int door2_pin = cfg_pin("door2_gpio", WSS_PIN_DOOR_2);
+  int enclosure_pin = cfg_pin("enclosure1_gpio", WSS_PIN_ENCLOSURE_OPEN);
+
+  add_sensor("motion", "motion1", motion1_pin, motion1);
+  add_sensor("motion", "motion2", motion2_pin, motion2);
+  add_sensor("door", "door1", door1_pin, door1);
+  add_sensor("door", "door2", door2_pin, door2);
+  add_sensor("enclosure_open", "enclosure1", enclosure_pin, enclosure);
 }
 
 } // namespace
@@ -462,6 +474,11 @@ void wss_sensors_loop() {
   hash_int("motion_ld2410b_rx_gpio", 16);
   hash_int("motion_ld2410b_tx_gpio", 17);
   hash_int("motion_ld2410b_baud", 256000);
+  hash_int("motion1_gpio", WSS_PIN_MOTION_1);
+  hash_int("motion2_gpio", WSS_PIN_MOTION_2);
+  hash_int("door1_gpio", WSS_PIN_DOOR_1);
+  hash_int("door2_gpio", WSS_PIN_DOOR_2);
+  hash_int("enclosure1_gpio", WSS_PIN_ENCLOSURE_OPEN);
 
   if (h != last_cfg_hash) {
     last_cfg_hash = h;

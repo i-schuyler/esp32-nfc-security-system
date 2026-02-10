@@ -10,6 +10,7 @@
   const PN532_IRQ_SAFE_PINS = [32, 33, 34, 35, 36, 39];
   const SD_CS_SAFE_PINS = [13, 16, 17, 25, 26, 27, 32, 33];
   const OUTPUT_GPIO_SAFE_PINS = [13, 14, 16, 17, 25, 26, 27, 32, 33];
+  const INPUT_GPIO_SAFE_PINS = [13, 14, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33, 34, 35, 36, 39];
 
   const state = {
     adminToken: '',
@@ -32,6 +33,20 @@
       lightEnabled: true,
       lightPattern: 'steady',
       silencedLightPattern: 'steady',
+    },
+    inputs: {
+      motion1Pin: -1,
+      motion2Pin: -1,
+      door1Pin: -1,
+      door2Pin: -1,
+      enclosure1Pin: -1,
+    },
+    inputsEnabled: {
+      motion1: false,
+      motion2: false,
+      door1: false,
+      door2: false,
+      enclosure1: false,
     },
     nfcProvision: { stage: 'idle', startScanMs: 0, firstScanMs: 0, confirmedRole: 'unknown' },
   };
@@ -409,6 +424,23 @@
     checkOutput('Horn', hornPin);
     checkOutput('Light', lightPin);
 
+    const useGpioMotion = state.motionKind === 'gpio';
+    if (useGpioMotion && state.inputsEnabled.motion1) {
+      claim(state.inputs.motion1Pin, 'Motion 1');
+    }
+    if (useGpioMotion && state.inputsEnabled.motion2) {
+      claim(state.inputs.motion2Pin, 'Motion 2');
+    }
+    if (state.inputsEnabled.door1) {
+      claim(state.inputs.door1Pin, 'Door 1');
+    }
+    if (state.inputsEnabled.door2) {
+      claim(state.inputs.door2Pin, 'Door 2');
+    }
+    if (state.inputsEnabled.enclosure1) {
+      claim(state.inputs.enclosure1Pin, 'Enclosure');
+    }
+
     if (state.motionKind === 'ld2410b_uart') {
       const rx = state.ld2410b.rx;
       const tx = state.ld2410b.tx;
@@ -447,6 +479,11 @@
 
     rows.push({ label: 'Horn GPIO', value: pinValueText(state.outputs.hornPin) });
     rows.push({ label: 'Light GPIO', value: pinValueText(state.outputs.lightPin) });
+    rows.push({ label: 'Motion 1 GPIO', value: pinValueText(state.inputs.motion1Pin) });
+    rows.push({ label: 'Motion 2 GPIO', value: pinValueText(state.inputs.motion2Pin) });
+    rows.push({ label: 'Door 1 GPIO', value: pinValueText(state.inputs.door1Pin) });
+    rows.push({ label: 'Door 2 GPIO', value: pinValueText(state.inputs.door2Pin) });
+    rows.push({ label: 'Enclosure GPIO', value: pinValueText(state.inputs.enclosure1Pin) });
 
     if (state.motionKind === 'ld2410b_uart') {
       rows.push({ label: 'LD2410B RX', value: pinValueText(state.ld2410b.rx) });
@@ -718,6 +755,36 @@
         { value: 'ld2410b_uart', label: 'LD2410B UART' },
       ], state.motionKind || 'gpio');
 
+      const gpioWrap = document.createElement('div');
+      gpioWrap.className = 'row';
+      gpioWrap.id = 'motionGpioFields';
+      host.appendChild(gpioWrap);
+
+      function addGpioLabel(text) {
+        const p = document.createElement('div');
+        p.className = 'small';
+        p.textContent = text;
+        gpioWrap.appendChild(p);
+      }
+
+      function addGpioSelect(id, label, options, value) {
+        const l = document.createElement('label');
+        l.className = 'small';
+        l.textContent = label;
+        gpioWrap.appendChild(l);
+        const s = document.createElement('select');
+        s.id = id;
+        for (const opt of options) {
+          const o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.label;
+          s.appendChild(o);
+        }
+        if (value !== undefined) s.value = value;
+        gpioWrap.appendChild(s);
+        return s;
+      }
+
       const ldWrap = document.createElement('div');
       ldWrap.className = 'row';
       ldWrap.id = 'ld2410bFields';
@@ -776,9 +843,28 @@
       const baudInput = addLdInput('wiz_ld2410b_baud', 'LD2410B baud', 'number', String(LD2410B_DEFAULT_BAUD));
       baudInput.value = String(state.ld2410b.baud || LD2410B_DEFAULT_BAUD);
 
+      const inputPinOptions = [{ value: '-1', label: 'Not used' }].concat(INPUT_GPIO_SAFE_PINS.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })));
+      addGpioLabel('Motion GPIO pins are used only when motion type is GPIO.');
+      addGpioSelect('wiz_motion1_gpio', 'Motion 1 GPIO', inputPinOptions,
+        String((state.inputs.motion1Pin !== undefined) ? state.inputs.motion1Pin : -1));
+      addGpioSelect('wiz_motion2_gpio', 'Motion 2 GPIO', inputPinOptions,
+        String((state.inputs.motion2Pin !== undefined) ? state.inputs.motion2Pin : -1));
+
       addCheckbox('wiz_motion_enabled', 'Motion sensor enabled');
       addCheckbox('wiz_door_enabled', 'Door/window sensor enabled');
+      addCheckbox('wiz_enclosure_enabled', 'Enclosure/tamper sensor enabled');
       addLabel('At least one primary sensor must be enabled to complete setup.');
+      addLabel('Select GPIO pins for each enabled sensor.');
+      addLabel('Use Diagnostics → Sensors to confirm raw and active state after wiring.');
+      addSelect('wiz_door1_gpio', 'Door 1 GPIO', inputPinOptions,
+        String((state.inputs.door1Pin !== undefined) ? state.inputs.door1Pin : -1));
+      addSelect('wiz_door2_gpio', 'Door 2 GPIO', inputPinOptions,
+        String((state.inputs.door2Pin !== undefined) ? state.inputs.door2Pin : -1));
+      addSelect('wiz_enclosure1_gpio', 'Enclosure GPIO', inputPinOptions,
+        String((state.inputs.enclosure1Pin !== undefined) ? state.inputs.enclosure1Pin : -1));
       addLabel('Control interfaces (optional).');
       addCheckbox('wiz_web_enabled', 'Enable Web UI controls');
       addCheckbox('wiz_nfc_enabled', 'Enable NFC controls');
@@ -789,8 +875,10 @@
       if (motionKind) {
         motionKind.addEventListener('change', () => {
           ldWrap.classList.toggle('hidden', motionKind.value !== 'ld2410b_uart');
+          gpioWrap.classList.toggle('hidden', motionKind.value !== 'gpio');
         });
         ldWrap.classList.toggle('hidden', motionKind.value !== 'ld2410b_uart');
+        gpioWrap.classList.toggle('hidden', motionKind.value !== 'gpio');
       }
       updatePrimarySensorFlag(true);
       return;
@@ -861,6 +949,32 @@
       rx: (ld.rx_gpio !== undefined) ? ld.rx_gpio : 16,
       tx: (ld.tx_gpio !== undefined) ? ld.tx_gpio : 17,
       baud: (ld.baud !== undefined) ? ld.baud : LD2410B_DEFAULT_BAUD,
+    };
+    const sensorEntries = Array.isArray(sens.sensors) ? sens.sensors : [];
+    const findEntry = (id) => sensorEntries.find((e) => e.id === id);
+    const pinFor = (id) => {
+      const entry = findEntry(id);
+      if (!entry) return -1;
+      if (entry.pin !== undefined) return entry.pin;
+      return -1;
+    };
+    const enabledFor = (id) => {
+      const entry = findEntry(id);
+      return entry ? !!entry.enabled_cfg : false;
+    };
+    state.inputs = {
+      motion1Pin: pinFor('motion1'),
+      motion2Pin: pinFor('motion2'),
+      door1Pin: pinFor('door1'),
+      door2Pin: pinFor('door2'),
+      enclosure1Pin: pinFor('enclosure1'),
+    };
+    state.inputsEnabled = {
+      motion1: enabledFor('motion1'),
+      motion2: enabledFor('motion2'),
+      door1: enabledFor('door1'),
+      door2: enabledFor('door2'),
+      enclosure1: enabledFor('enclosure1'),
     };
 
     const fw = `${j.firmware_name || ''} ${j.firmware_version || ''}`.trim();
@@ -1125,6 +1239,29 @@
         data.motion_ld2410b_tx_gpio = parseInt($('wiz_ld2410b_tx').value || '17', 10) || 17;
         data.motion_ld2410b_baud = parseInt($('wiz_ld2410b_baud').value || String(LD2410B_DEFAULT_BAUD), 10) || LD2410B_DEFAULT_BAUD;
       }
+      if (kind === 'gpio') {
+        if ($('wiz_motion1_gpio')) {
+          const motion1Pin = parseInt($('wiz_motion1_gpio').value || '-1', 10);
+          data.motion1_gpio = Number.isNaN(motion1Pin) ? -1 : motion1Pin;
+        }
+        if ($('wiz_motion2_gpio')) {
+          const motion2Pin = parseInt($('wiz_motion2_gpio').value || '-1', 10);
+          data.motion2_gpio = Number.isNaN(motion2Pin) ? -1 : motion2Pin;
+        }
+      }
+      if ($('wiz_door1_gpio')) {
+        const door1Pin = parseInt($('wiz_door1_gpio').value || '-1', 10);
+        data.door1_gpio = Number.isNaN(door1Pin) ? -1 : door1Pin;
+      }
+      if ($('wiz_door2_gpio')) {
+        const door2Pin = parseInt($('wiz_door2_gpio').value || '-1', 10);
+        data.door2_gpio = Number.isNaN(door2Pin) ? -1 : door2Pin;
+      }
+      if ($('wiz_enclosure1_gpio')) {
+        const enclosurePin = parseInt($('wiz_enclosure1_gpio').value || '-1', 10);
+        data.enclosure1_gpio = Number.isNaN(enclosurePin) ? -1 : enclosurePin;
+      }
+      if ($('wiz_enclosure_enabled')) data.enclosure_open_enabled = !!$('wiz_enclosure_enabled').checked;
       if ($('wiz_web_enabled')) data.control_web_enabled = !!$('wiz_web_enabled').checked;
       if ($('wiz_nfc_enabled')) data.control_nfc_enabled = !!$('wiz_nfc_enabled').checked;
       updatePrimarySensorFlag();

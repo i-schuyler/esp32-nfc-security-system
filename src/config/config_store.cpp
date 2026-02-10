@@ -225,6 +225,11 @@ void WssConfigStore::set_defaults() {
   root["motion_ld2410b_rx_gpio"] = 16;
   root["motion_ld2410b_tx_gpio"] = 17;
   root["motion_ld2410b_baud"] = 256000;
+  root["motion1_gpio"] = WSS_PIN_MOTION_1;
+  root["motion2_gpio"] = WSS_PIN_MOTION_2;
+  root["door1_gpio"] = WSS_PIN_DOOR_1;
+  root["door2_gpio"] = WSS_PIN_DOOR_2;
+  root["enclosure1_gpio"] = WSS_PIN_ENCLOSURE_OPEN;
   root["door_enabled"] = false;
   root["door1_enabled"] = false;
   root["door2_enabled"] = false;
@@ -325,6 +330,11 @@ bool WssConfigStore::validate_or_recover(String& err) {
   if (!root["motion_ld2410b_rx_gpio"].is<long>()) root["motion_ld2410b_rx_gpio"] = 16;
   if (!root["motion_ld2410b_tx_gpio"].is<long>()) root["motion_ld2410b_tx_gpio"] = 17;
   if (!root["motion_ld2410b_baud"].is<long>()) root["motion_ld2410b_baud"] = 256000;
+  if (!root["motion1_gpio"].is<long>()) root["motion1_gpio"] = WSS_PIN_MOTION_1;
+  if (!root["motion2_gpio"].is<long>()) root["motion2_gpio"] = WSS_PIN_MOTION_2;
+  if (!root["door1_gpio"].is<long>()) root["door1_gpio"] = WSS_PIN_DOOR_1;
+  if (!root["door2_gpio"].is<long>()) root["door2_gpio"] = WSS_PIN_DOOR_2;
+  if (!root["enclosure1_gpio"].is<long>()) root["enclosure1_gpio"] = WSS_PIN_ENCLOSURE_OPEN;
 
   if (!root["horn_gpio"].is<long>()) root["horn_gpio"] = WSS_PIN_HORN_OUT;
   if (!root["light_gpio"].is<long>()) root["light_gpio"] = WSS_PIN_LIGHT_OUT;
