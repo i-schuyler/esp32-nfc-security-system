@@ -143,6 +143,16 @@ Flow (reader present):
 - Scan the Admin card once to capture it.
 - Scan the same card again to confirm.
 
+Sensor GPIO pin selection:
+- Dropdown-only pin selectors for Motion 1/2, Door 1/2, and Enclosure.
+- `-1` means "Not used/unconfigured" and must not trigger.
+- Motion GPIO pins are used only when `motion_kind=gpio`.
+
+LD2410B UART visibility (verified in wizard):
+- When `motion_kind=ld2410b_uart`, the wizard shows LD2410B RX/TX pin dropdowns and a baud field.
+- Labels are "LD2410B RX (ESP32 RX2)" and "LD2410B TX (ESP32 TX2)" with default 256000 baud.
+- Wiring guidance: LD2410B TX -> ESP32 RX2 pin, LD2410B RX -> ESP32 TX2 pin.
+
 Confirmation rules:
 - Show role-only result: Admin / User / Unknown.
 - Never display or log UID/taghash.
@@ -181,7 +191,7 @@ A) Auto-refresh policy
 B) Step order (critical first)
 - Step 1: Welcome + Admin Password (merged) with guided operator instructions.
 - Step 2: Network; change AP password from default (required); SSID change optional; STA optional.
-- Step 3: Inputs (NFC + Sensors); merged step with guided instructions; includes pin assignment (NFC + sensors), PN532 SPI module selection for M7.3, and LD2410B UART pin selection; never blocked by missing hardware.
+- Step 3: Inputs (NFC + Sensors); merged step with guided instructions; includes dropdown-only pin assignment (NFC + sensors), PN532 SPI module selection for M7.3, and LD2410B UART pin selection when motion_kind=ld2410b_uart; never blocked by missing hardware.
 - Step 4: Time & RTC; includes RTC pin selection for M7.3.
 - Step 5: Storage; includes SD SPI pin selection for M7.3.
 - Step 6: Outputs; includes output polarity and light mode selection.
