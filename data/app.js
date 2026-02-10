@@ -9,6 +9,7 @@
   const PN532_RST_SAFE_PINS = PN532_CS_SAFE_PINS.slice();
   const PN532_IRQ_SAFE_PINS = [32, 33, 34, 35, 36, 39];
   const SD_CS_SAFE_PINS = [13, 16, 17, 25, 26, 27, 32, 33];
+  const OUTPUT_GPIO_SAFE_PINS = [13, 14, 16, 17, 25, 26, 27, 32, 33];
 
   const state = {
     adminToken: '',
@@ -22,6 +23,16 @@
     ld2410b: { rx: 16, tx: 17, baud: LD2410B_DEFAULT_BAUD },
     nfc: { iface: 'spi', cs: 27, irq: 32, rst: 33 },
     sd: { enabled: true, cs: 13 },
+    outputs: {
+      hornPin: -1,
+      lightPin: -1,
+      hornActiveLow: false,
+      lightActiveLow: false,
+      hornEnabled: true,
+      lightEnabled: true,
+      lightPattern: 'steady',
+      silencedLightPattern: 'steady',
+    },
     nfcProvision: { stage: 'idle', startScanMs: 0, firstScanMs: 0, confirmedRole: 'unknown' },
   };
   const APP_PAGE = (window.APP_PAGE || 'main');
@@ -391,6 +402,13 @@
       checkOutput('NFC RST', nfcRst);
     }
 
+    const hornPin = state.outputs.hornPin;
+    const lightPin = state.outputs.lightPin;
+    claim(hornPin, 'Horn');
+    claim(lightPin, 'Light');
+    checkOutput('Horn', hornPin);
+    checkOutput('Light', lightPin);
+
     if (state.motionKind === 'ld2410b_uart') {
       const rx = state.ld2410b.rx;
       const tx = state.ld2410b.tx;
@@ -426,6 +444,9 @@
       rows.push({ label: 'NFC RST', value: pinValueText(state.nfc.rst) });
       rows.push({ label: 'NFC IRQ', value: pinValueText(state.nfc.irq) });
     }
+
+    rows.push({ label: 'Horn GPIO', value: pinValueText(state.outputs.hornPin) });
+    rows.push({ label: 'Light GPIO', value: pinValueText(state.outputs.lightPin) });
 
     if (state.motionKind === 'ld2410b_uart') {
       rows.push({ label: 'LD2410B RX', value: pinValueText(state.ld2410b.rx) });
@@ -777,8 +798,36 @@
 
     if (step === 'outputs') {
       addLabel('Outputs define alert behavior.');
+      addLabel('Set output pins and polarity, then test before arming.');
+      const pinOptions = [{ value: '-1', label: 'Use default' }].concat(OUTPUT_GPIO_SAFE_PINS.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })));
+      addSelect('wiz_horn_gpio', 'Horn GPIO', pinOptions, String(state.outputs.hornPin || -1));
+      addSelect('wiz_light_gpio', 'Light GPIO', pinOptions, String(state.outputs.lightPin || -1));
+      addCheckbox('wiz_horn_active_low', 'Horn active-low (LOW = ON)');
+      addCheckbox('wiz_light_active_low', 'Light active-low (LOW = ON)');
+      addSelect('wiz_light_pattern', 'Light mode (Triggered)', [
+        { value: 'off', label: 'Off' },
+        { value: 'steady', label: 'Steady' },
+        { value: 'strobe', label: 'Strobe' },
+      ], state.outputs.lightPattern || 'steady');
+      addSelect('wiz_silenced_light_pattern', 'Light mode (Silenced)', [
+        { value: 'off', label: 'Off' },
+        { value: 'steady', label: 'Steady' },
+        { value: 'strobe', label: 'Strobe' },
+      ], state.outputs.silencedLightPattern || 'steady');
       addCheckbox('wiz_horn_enabled', 'Horn enabled');
       addCheckbox('wiz_light_enabled', 'Light enabled');
+      const hornPol = $('wiz_horn_active_low');
+      const lightPol = $('wiz_light_active_low');
+      if (hornPol) hornPol.checked = !!state.outputs.hornActiveLow;
+      if (lightPol) lightPol.checked = !!state.outputs.lightActiveLow;
+      const hornEnabled = $('wiz_horn_enabled');
+      const lightEnabled = $('wiz_light_enabled');
+      if (hornEnabled) hornEnabled.checked = !!state.outputs.hornEnabled;
+      if (lightEnabled) lightEnabled.checked = !!state.outputs.lightEnabled;
+      addLabel('Confirm polarity and light mode with Test outputs before arming.');
       return;
     }
 
@@ -874,6 +923,18 @@
     } else {
       setText('lockout', 'Unknown');
     }
+
+    const out = j.outputs || {};
+    state.outputs = {
+      hornPin: (out.horn_gpio !== undefined) ? out.horn_gpio : state.outputs.hornPin,
+      lightPin: (out.light_gpio !== undefined) ? out.light_gpio : state.outputs.lightPin,
+      hornActiveLow: (out.horn_active_low !== undefined) ? out.horn_active_low : state.outputs.hornActiveLow,
+      lightActiveLow: (out.light_active_low !== undefined) ? out.light_active_low : state.outputs.lightActiveLow,
+      hornEnabled: (out.horn_enabled_cfg !== undefined) ? out.horn_enabled_cfg : state.outputs.hornEnabled,
+      lightEnabled: (out.light_enabled_cfg !== undefined) ? out.light_enabled_cfg : state.outputs.lightEnabled,
+      lightPattern: out.light_pattern || state.outputs.lightPattern,
+      silencedLightPattern: out.silenced_light_pattern || state.outputs.silencedLightPattern,
+    };
 
     const stepLabel = WIZARD_STEPS.find((step) => step.id === state.lastStep);
     const setupStepText = stepLabel ? stepLabel.label : state.lastStep;
@@ -1069,6 +1130,18 @@
       updatePrimarySensorFlag();
     }
     if (step === 'outputs') {
+      if ($('wiz_horn_gpio')) {
+        const hornPin = parseInt($('wiz_horn_gpio').value || '-1', 10);
+        data.horn_gpio = Number.isNaN(hornPin) ? -1 : hornPin;
+      }
+      if ($('wiz_light_gpio')) {
+        const lightPin = parseInt($('wiz_light_gpio').value || '-1', 10);
+        data.light_gpio = Number.isNaN(lightPin) ? -1 : lightPin;
+      }
+      if ($('wiz_horn_active_low')) data.horn_active_low = !!$('wiz_horn_active_low').checked;
+      if ($('wiz_light_active_low')) data.light_active_low = !!$('wiz_light_active_low').checked;
+      if ($('wiz_light_pattern')) data.light_pattern = $('wiz_light_pattern').value || 'steady';
+      if ($('wiz_silenced_light_pattern')) data.silenced_light_pattern = $('wiz_silenced_light_pattern').value || 'steady';
       data.horn_enabled = !!$('wiz_horn_enabled').checked;
       data.light_enabled = !!$('wiz_light_enabled').checked;
     }
