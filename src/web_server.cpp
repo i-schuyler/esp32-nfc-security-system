@@ -120,6 +120,63 @@ static void send_json(int code, const JsonDocument& doc) {
   server.send(code, "application/json", out);
 }
 
+static bool output_pin_allowed(int pin) {
+  if (pin < 0) return true;
+  switch (pin) {
+    case 13:
+    case 14:
+    case 16:
+    case 17:
+    case 25:
+    case 26:
+    case 27:
+    case 32:
+    case 33:
+      return true;
+    default:
+      return false;
+  }
+}
+
+static bool output_pin_conflicts(int pin, const JsonObjectConst& root) {
+  if (pin < 0) return false;
+  int nfc_cs = -1;
+  int nfc_rst = -1;
+  int nfc_irq = -1;
+  String nfc_iface = root["nfc_interface"] | "spi";
+  if (nfc_iface == "spi") {
+    nfc_cs = root["nfc_spi_cs_gpio"] | -1;
+    nfc_rst = root["nfc_spi_rst_gpio"] | -1;
+    nfc_irq = root["nfc_spi_irq_gpio"] | -1;
+  }
+
+  const bool sd_enabled = root["sd_enabled"] | true;
+  const int sd_cs = sd_enabled ? (int)(root["sd_cs_gpio"] | -1) : -1;
+
+  int ld_rx = -1;
+  int ld_tx = -1;
+  String motion_kind = root["motion_kind"] | "gpio";
+  if (motion_kind == "ld2410b_uart") {
+    ld_rx = root["motion_ld2410b_rx_gpio"] | -1;
+    ld_tx = root["motion_ld2410b_tx_gpio"] | -1;
+  }
+  return pin == nfc_cs || pin == nfc_rst || pin == nfc_irq || pin == sd_cs || pin == ld_rx || pin == ld_tx;
+}
+
+static bool validate_output_pins(String& err) {
+  if (!g_cfg) return true;
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
+  int horn = root["horn_gpio"] | -1;
+  int light = root["light_gpio"] | -1;
+  if (!output_pin_allowed(horn)) { err = "horn_gpio_not_allowed"; return false; }
+  if (!output_pin_allowed(light)) { err = "light_gpio_not_allowed"; return false; }
+  if (horn >= 0 && light >= 0 && horn == light) { err = "output_gpio_conflict"; return false; }
+  if (output_pin_conflicts(horn, root)) { err = "horn_gpio_conflict"; return false; }
+  if (output_pin_conflicts(light, root)) { err = "light_gpio_conflict"; return false; }
+  err = "";
+  return true;
+}
+
 static bool setup_required() {
   return !(g_cfg && g_cfg->setup_completed());
 }
@@ -237,6 +294,10 @@ static void handle_status() {
     JsonObject o = doc.createNestedObject("outputs");
     o["horn_pin_configured"] = out.horn_pin_configured;
     o["light_pin_configured"] = out.light_pin_configured;
+    o["horn_gpio"] = out.horn_gpio;
+    o["light_gpio"] = out.light_gpio;
+    o["horn_active_low"] = out.horn_active_low;
+    o["light_active_low"] = out.light_active_low;
     o["horn_enabled_cfg"] = out.horn_enabled_cfg;
     o["light_enabled_cfg"] = out.light_enabled_cfg;
     o["horn_active"] = out.horn_active;
@@ -872,6 +933,13 @@ static void handle_wizard_set_step() {
     return;
   }
 
+  String pin_err;
+  if (!validate_output_pins(pin_err)) {
+    log_wizard_event("warn", "wizard_step_save_fail", "wizard step save failed", step.c_str(), pin_err.c_str());
+    server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
+    return;
+  }
+
   String save_err;
   g_cfg->ensure_runtime_defaults();
   if (!g_cfg->save(save_err)) {
@@ -981,6 +1049,11 @@ static void handle_config_post() {
   }
 
   if (did_change) {
+    String pin_err;
+    if (!validate_output_pins(pin_err)) {
+      server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
+      return;
+    }
     String save_err;
     if (!g_cfg->save(save_err)) {
       server.send(500, "application/json", "{\"error\":\"save_failed\"}");

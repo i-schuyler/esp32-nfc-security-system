@@ -7,6 +7,7 @@
 #include <mbedtls/sha256.h>
 
 #include "../logging/event_logger.h"
+#include "pin_config.h"
 #include "version.h"
 
 static const char* kPrefsNamespace = "wss";
@@ -199,6 +200,10 @@ void WssConfigStore::set_defaults() {
 
   // Outputs (scaffolding)
   root["silenced_duration_s"] = 180;
+  root["horn_gpio"] = WSS_PIN_HORN_OUT;
+  root["light_gpio"] = WSS_PIN_LIGHT_OUT;
+  root["horn_active_low"] = false;
+  root["light_active_low"] = false;
   root["horn_enabled"] = true;
   root["light_enabled"] = true;
   root["horn_pattern"] = "steady";
@@ -320,6 +325,11 @@ bool WssConfigStore::validate_or_recover(String& err) {
   if (!root["motion_ld2410b_rx_gpio"].is<long>()) root["motion_ld2410b_rx_gpio"] = 16;
   if (!root["motion_ld2410b_tx_gpio"].is<long>()) root["motion_ld2410b_tx_gpio"] = 17;
   if (!root["motion_ld2410b_baud"].is<long>()) root["motion_ld2410b_baud"] = 256000;
+
+  if (!root["horn_gpio"].is<long>()) root["horn_gpio"] = WSS_PIN_HORN_OUT;
+  if (!root["light_gpio"].is<long>()) root["light_gpio"] = WSS_PIN_LIGHT_OUT;
+  if (!root["horn_active_low"].is<bool>()) root["horn_active_low"] = false;
+  if (!root["light_active_low"].is<bool>()) root["light_active_low"] = false;
 
   if (!root.containsKey("motion1_pull") || !root["motion1_pull"].is<const char*>()) root["motion1_pull"] = "floating";
   if (!root.containsKey("motion1_active_level") || !root["motion1_active_level"].is<const char*>()) root["motion1_active_level"] = "high";

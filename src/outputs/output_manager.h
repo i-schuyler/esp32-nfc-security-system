@@ -2,8 +2,8 @@
 // Role: Deterministic horn/light output control driven by the state machine (M4).
 // Notes:
 // - No pins are assumed. Unset pins (-1) mean the corresponding output is disabled.
-// - Patterns are intentionally conservative in V1. "steady" is implemented; other patterns
-//   fall back to steady with an explicit warning log.
+// - Patterns are intentionally conservative in V1. Horn supports "steady" only; light supports
+//   "steady" and "strobe". Other patterns fall back to steady with an explicit warning log.
 
 #pragma once
 
@@ -20,6 +20,10 @@ enum class WssOutputLogicalState {
 struct WssOutputsStatus {
   bool horn_pin_configured = false;
   bool light_pin_configured = false;
+  int horn_gpio = -1;
+  int light_gpio = -1;
+  bool horn_active_low = false;
+  bool light_active_low = false;
   bool horn_enabled_cfg = false;
   bool light_enabled_cfg = false;
   String horn_pattern = "steady";
