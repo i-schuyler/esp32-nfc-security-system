@@ -19,7 +19,7 @@ struct WssSensorEntryStatus {
   String sensor_type;          // motion|door|enclosure_open
   String sensor_id;            // stable ID (e.g., motion1, door2)
   bool enabled_cfg = false;    // enabled in config
-  bool pin_configured = false; // compile-time pin configured
+  bool pin_configured = false; // pin configured (runtime or compile-time)
   String interface;            // e.g., gpio_digital
   String health;               // ok|disabled|unconfigured
   int pin = -1;                // for diagnostics only (no secrets)

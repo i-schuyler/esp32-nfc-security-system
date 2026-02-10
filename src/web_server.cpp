@@ -138,6 +138,43 @@ static bool output_pin_allowed(int pin) {
   }
 }
 
+static bool input_pin_allowed(int pin) {
+  if (pin < 0) return true;
+  switch (pin) {
+    case 13:
+    case 14:
+    case 16:
+    case 17:
+    case 18:
+    case 19:
+    case 21:
+    case 22:
+    case 23:
+    case 25:
+    case 26:
+    case 27:
+    case 32:
+    case 33:
+    case 34:
+    case 35:
+    case 36:
+    case 39:
+      return true;
+    default:
+      return false;
+  }
+}
+
+static bool spi_bus_in_use(const JsonObjectConst& root) {
+  String nfc_iface = root["nfc_interface"] | "spi";
+  bool sd_enabled = root["sd_enabled"] | true;
+  return (nfc_iface == "spi") || sd_enabled;
+}
+
+static bool is_spi_bus_pin(int pin) {
+  return pin == 18 || pin == 19 || pin == 23;
+}
+
 static bool output_pin_conflicts(int pin, const JsonObjectConst& root) {
   if (pin < 0) return false;
   int nfc_cs = -1;
@@ -163,6 +200,38 @@ static bool output_pin_conflicts(int pin, const JsonObjectConst& root) {
   return pin == nfc_cs || pin == nfc_rst || pin == nfc_irq || pin == sd_cs || pin == ld_rx || pin == ld_tx;
 }
 
+static bool input_pin_conflicts(int pin, const JsonObjectConst& root) {
+  if (pin < 0) return false;
+  int horn = root["horn_gpio"] | -1;
+  int light = root["light_gpio"] | -1;
+  if (pin == horn || pin == light) return true;
+
+  String nfc_iface = root["nfc_interface"] | "spi";
+  if (nfc_iface == "spi") {
+    int nfc_cs = root["nfc_spi_cs_gpio"] | -1;
+    int nfc_rst = root["nfc_spi_rst_gpio"] | -1;
+    int nfc_irq = root["nfc_spi_irq_gpio"] | -1;
+    if (pin == nfc_cs || pin == nfc_rst || pin == nfc_irq) return true;
+  }
+
+  bool sd_enabled = root["sd_enabled"] | true;
+  if (sd_enabled) {
+    int sd_cs = root["sd_cs_gpio"] | -1;
+    if (pin == sd_cs) return true;
+  }
+
+  bool motion_enabled = root["motion_enabled"] | true;
+  String motion_kind = root["motion_kind"] | "gpio";
+  if (motion_enabled && motion_kind == "ld2410b_uart") {
+    int ld_rx = root["motion_ld2410b_rx_gpio"] | -1;
+    int ld_tx = root["motion_ld2410b_tx_gpio"] | -1;
+    if (pin == ld_rx || pin == ld_tx) return true;
+  }
+
+  if (spi_bus_in_use(root) && is_spi_bus_pin(pin)) return true;
+  return false;
+}
+
 static bool validate_output_pins(String& err) {
   if (!g_cfg) return true;
   JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
@@ -173,6 +242,61 @@ static bool validate_output_pins(String& err) {
   if (horn >= 0 && light >= 0 && horn == light) { err = "output_gpio_conflict"; return false; }
   if (output_pin_conflicts(horn, root)) { err = "horn_gpio_conflict"; return false; }
   if (output_pin_conflicts(light, root)) { err = "light_gpio_conflict"; return false; }
+  err = "";
+  return true;
+}
+
+static bool validate_input_pins(String& err) {
+  if (!g_cfg) return true;
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
+  bool motion_global = root["motion_enabled"] | true;
+  bool door_global = root["door_enabled"] | false;
+  bool enclosure = root["enclosure_open_enabled"] | false;
+  String motion_kind = root["motion_kind"] | "gpio";
+  bool use_gpio_motion = (motion_kind == "gpio");
+  bool motion1 = use_gpio_motion && (root["motion1_enabled"] | motion_global);
+  bool motion2 = use_gpio_motion && (root["motion2_enabled"] | (motion_global && false));
+  bool door1 = root["door1_enabled"] | door_global;
+  bool door2 = root["door2_enabled"] | (door_global && false);
+
+  int motion1_pin = root["motion1_gpio"] | -1;
+  int motion2_pin = root["motion2_gpio"] | -1;
+  int door1_pin = root["door1_gpio"] | -1;
+  int door2_pin = root["door2_gpio"] | -1;
+  int enclosure_pin = root["enclosure1_gpio"] | -1;
+
+  auto check_pin = [&](bool enabled, int pin, const char* not_allowed_err,
+                       const char* conflict_err) -> bool {
+    if (!enabled) return true;
+    if (!input_pin_allowed(pin)) { err = not_allowed_err; return false; }
+    if (input_pin_conflicts(pin, root)) { err = conflict_err; return false; }
+    return true;
+  };
+
+  if (!check_pin(motion1, motion1_pin, "motion1_gpio_not_allowed", "motion1_gpio_conflict")) return false;
+  if (!check_pin(motion2, motion2_pin, "motion2_gpio_not_allowed", "motion2_gpio_conflict")) return false;
+  if (!check_pin(door1, door1_pin, "door1_gpio_not_allowed", "door1_gpio_conflict")) return false;
+  if (!check_pin(door2, door2_pin, "door2_gpio_not_allowed", "door2_gpio_conflict")) return false;
+  if (!check_pin(enclosure, enclosure_pin, "enclosure1_gpio_not_allowed", "enclosure1_gpio_conflict")) return false;
+
+  struct PinClaim { int pin; const char* err_code; };
+  PinClaim claims[5];
+  size_t count = 0;
+  auto claim_pin = [&](bool enabled, int pin, const char* err_code) -> bool {
+    if (!enabled || pin < 0) return true;
+    for (size_t i = 0; i < count; i++) {
+      if (claims[i].pin == pin) { err = err_code; return false; }
+    }
+    claims[count++] = {pin, err_code};
+    return true;
+  };
+
+  if (!claim_pin(motion1, motion1_pin, "motion1_gpio_conflict")) return false;
+  if (!claim_pin(motion2, motion2_pin, "motion2_gpio_conflict")) return false;
+  if (!claim_pin(door1, door1_pin, "door1_gpio_conflict")) return false;
+  if (!claim_pin(door2, door2_pin, "door2_gpio_conflict")) return false;
+  if (!claim_pin(enclosure, enclosure_pin, "enclosure1_gpio_conflict")) return false;
+
   err = "";
   return true;
 }
@@ -939,6 +1063,11 @@ static void handle_wizard_set_step() {
     server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
     return;
   }
+  if (!validate_input_pins(pin_err)) {
+    log_wizard_event("warn", "wizard_step_save_fail", "wizard step save failed", step.c_str(), pin_err.c_str());
+    server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
+    return;
+  }
 
   String save_err;
   g_cfg->ensure_runtime_defaults();
@@ -1051,6 +1180,10 @@ static void handle_config_post() {
   if (did_change) {
     String pin_err;
     if (!validate_output_pins(pin_err)) {
+      server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
+      return;
+    }
+    if (!validate_input_pins(pin_err)) {
       server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
       return;
     }
