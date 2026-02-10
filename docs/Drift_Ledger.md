@@ -25,6 +25,13 @@ Purpose:
 - No silent drift: no new endpoints/flags/schema; admin token storage is memory-only in UI.
 - Status: resolved
 
+## DL4 — 2026-02-09 — Runtime GPIO input pin selection added [RESOLVED]
+- Symptom: sensor pins were compile-time only; setup could not change GPIO inputs without rebuild.
+- Impact: field wiring changes required firmware rebuild or platformio overrides.
+- Proposed fix: add runtime GPIO input pin keys with wizard dropdowns and conflict validation; rebuild sensors when pins change.
+- No silent drift: append-only keys only; no new endpoints or auth changes.
+- Status: resolved
+
 ## 2026-01-28 — Drift Notes and Resolutions
 
 - Drift: README referenced outdated layout (e.g., UI/firmware folder expectations).  

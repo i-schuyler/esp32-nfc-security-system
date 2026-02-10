@@ -299,6 +299,22 @@ H2c. Unconfigured sensor visibility (M5).
 - Enable a sensor in config but leave its pin unset (`-1` default pin map).
 - Expected: `/api/status.sensors.overall` becomes `unconfigured` and at least one warning log is present (`sensor_unconfigured` or `sensor_pin_unset`).
 
+H2d. Runtime GPIO input pin selection (wizard).
+- Set motion_kind=gpio, enable Motion, and set Motion 1 GPIO to `-1` (Not used).
+- Expected: Motion 1 shows `pin_configured=false` and does not trigger; logs include `sensor_pin_unset` when enabled.
+- Set Door 1 GPIO and Enclosure GPIO to valid pins; save step.
+- Expected: `/api/status.sensors.sensors[]` shows the selected pins and `health=ok` when wired correctly.
+
+H2e. Input pin conflict validation (wizard).
+- Create a conflict (e.g., set Door 1 GPIO equal to `horn_gpio` or `nfc_spi_cs_gpio` while NFC SPI is enabled).
+- Expected: Save is rejected with a clear error; config does not change.
+- When SD or NFC SPI is enabled, attempt to select SPI bus pins (18/19/23) for inputs.
+- Expected: Save is rejected with a clear error.
+
+H2f. Dropdown-only pin selection.
+- Verify Inputs step uses dropdowns only (no freeform entry).
+- Expected: strapping pins (0/2/4/5/12/15) and UART0 pins (1/3) are not present.
+
 H3. Motion sensor sensitivity calibration.
 - Expected: can adjust in Admin mode; change logged; live readings visible.
 
