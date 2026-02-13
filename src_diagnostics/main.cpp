@@ -350,6 +350,7 @@ static void test_pn532_uart() {
   Serial.println("[STEP 5] PN532 UART (HSU) handshake");
   int rx = WSS_DIAG_PN532_UART_RX;
   int tx = WSS_DIAG_PN532_UART_TX;
+  Serial.printf("- Default RX=%d TX=%d (override at prompt)\\n", rx, tx);
   rx = prompt_pin("Enter PN532 RX pin", rx);
   tx = prompt_pin("Enter PN532 TX pin", tx);
 
