@@ -39,6 +39,12 @@ Each test must report PASS/FAIL with a short reason.
 3) SD card test
    - Initialize SD.
    - Create a temp file, write data, read back and verify, then delete.
+   - Optional destructive step (interactive):
+     - Default behavior: do NOT erase/format the SD.
+     - Prompt via Serial terminal to confirm SD erase/format; default response is NO.
+     - Require explicit confirmation (for example, type `ERASE` or use Y/N plus a second confirm).
+     - Log/print that SD erase is destructive and intended only for diagnostics.
+     - Log/print only actions and results (no secrets).
 
 4) I2C scan + DS3231 detect
    - Scan the bus for devices.
