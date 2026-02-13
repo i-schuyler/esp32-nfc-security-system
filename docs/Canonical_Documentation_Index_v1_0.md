@@ -111,6 +111,7 @@ All user-visible behavior must have:
 The following documents are not part of the canonical “conflict resolver” hierarchy, but they are required reading for implementation and release discipline:
 
 - `Implementation_Plan_v1_0.md` — build sequence, milestone exit criteria, negative-path tests, and contract coverage ledger
+- `Diagnostics_Board_Bringup_Firmware_v1_0.md` — board bring-up diagnostics firmware (non-customer)
 - `Troubleshooting_v1_0.md` — user-facing fault symptoms, recovery steps, and UI health indicator expectations
 - `Release_Channels_and_Stability_Promise.md` — release discipline and guarantees for product-grade stability
 - `Platform_Choice_IDF_Note_v1_0.md` — platform rationale and constraints for future migration decisions
