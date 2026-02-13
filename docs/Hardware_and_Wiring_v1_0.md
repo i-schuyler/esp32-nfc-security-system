@@ -13,6 +13,10 @@ This doc defines the V1 hardware assumptions and wiring contract.
 - Supported baseline: **ESP32 DevKit V1 (ESP-WROOM-32)**. Wiring defaults are defined in `docs/Wiring_Instructions_DevKitV1_v1_0.md`.
 - Planned / in-progress: **ESP32-S3-DEV-KIT-N32R16V-M** (Waveshare ESP32-S3-Dev-Kit-N32R16V). Investigation only; no canonical pin map or allowlist yet. See `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`.
 
+## ESP32-S3 (WROOM-2) constraints
+
+- GPIO35/36/37 are not allowed (reserved for flash/PSRAM internal use).
+
 ## 1) Required Modules (V1)
 
 Power measurement (V1 decision):
@@ -20,7 +24,7 @@ Power measurement (V1 decision):
 
 From accepted proposal:
 - ESP32 DevKit (ESP-WROOM-32)
-- PN532 NFC module (I2C or SPI)
+- PN532 NFC module (I2C or SPI). PN532 V3 (Elechouse) UART/HSU is planned/recommended for long cable runs; SPI/I2C support remains.
 - microSD module (SPI)
 - DS3231 RTC (I2C)
 - Motion sensor (LD2410 / LD2410B) (interface TBD: UART likely)
