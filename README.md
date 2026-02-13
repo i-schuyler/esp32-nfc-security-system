@@ -8,6 +8,10 @@ This repo is intentionally offline-first: it is designed to run without cloud de
 - Milestones **M0–M5** are implemented and merged.
 - **M6–M8 are paused** until planning/spec work resumes and bench testing begins.
 
+## Supported Hardware (V1)
+- Supported baseline: **ESP32 DevKit V1 (ESP-WROOM-32)** (PlatformIO env `esp32dev` in `platformio.ini`).
+- Planned / in-progress: **ESP32-S3-DEV-KIT-N32R16V-M** (Waveshare ESP32-S3-Dev-Kit-N32R16V). Investigation only; no PlatformIO env or pin allowlist yet. See `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`.
+
 ## Key properties (V1 scope)
 - Offline-first operation (AP + optional STA)
 - Explicit state machine (DISARMED / ARMED / TRIGGERED / SILENCED / FAULT)

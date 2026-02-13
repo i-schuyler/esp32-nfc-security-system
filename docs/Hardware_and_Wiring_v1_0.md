@@ -8,6 +8,11 @@ This doc defines the V1 hardware assumptions and wiring contract.
 - ESP32 DevKit v1 style board (ESP-WROOM-32 module)
 - Type 2 NFC tag (wallet card style)
 
+## Supported Hardware (V1)
+
+- Supported baseline: **ESP32 DevKit V1 (ESP-WROOM-32)**. Wiring defaults are defined in `docs/Wiring_Instructions_DevKitV1_v1_0.md`.
+- Planned / in-progress: **ESP32-S3-DEV-KIT-N32R16V-M** (Waveshare ESP32-S3-Dev-Kit-N32R16V). Investigation only; no canonical pin map or allowlist yet. See `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`.
+
 ## 1) Required Modules (V1)
 
 Power measurement (V1 decision):
