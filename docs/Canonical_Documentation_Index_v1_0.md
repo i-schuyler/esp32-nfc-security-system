@@ -129,3 +129,12 @@ The following documents are not part of the canonical “conflict resolver” hi
 
 
 - Codex CLI: `docs/Codex_CLI_Workflow_and_Safety_v1_0.md` — Repo-scoped guardrails and usage patterns for safe Codex-assisted development.
+
+------------------------------------------------------------
+6) Investigation Notes (Non-Canonical)
+------------------------------------------------------------
+
+These notes do not override canonical docs and are for planning only:
+
+- `docs/_investigation/esp32-s3-devkit-n32r16v-m_support_report.md`
+- `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`
