@@ -353,6 +353,7 @@ static void test_pn532_uart() {
   Serial.printf("- Default RX=%d TX=%d (override at prompt)\\n", rx, tx);
   rx = prompt_pin("Enter PN532 RX pin", rx);
   tx = prompt_pin("Enter PN532 TX pin", tx);
+  Serial.printf("- Using RX=%d TX=%d\\n", rx, tx);
 
   HardwareSerial& pn_serial = Serial2;
   if (rx < 0 || tx < 0) {
