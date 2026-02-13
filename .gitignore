@@ -5,3 +5,4 @@
 *.bin
 *.elf
 *.map
+docs/_local_refs/
