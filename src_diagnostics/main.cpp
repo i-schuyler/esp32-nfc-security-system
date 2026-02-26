@@ -53,9 +53,12 @@
 #ifndef WSS_DIAG_PARTITION_ENUM
 #define WSS_DIAG_PARTITION_ENUM 1
 #endif
+#ifndef WSS_DIAG_SKIP_PN532
+#define WSS_DIAG_SKIP_PN532 0
+#endif
 
 static const uint32_t kPromptTimeoutMs = 15000;
-static const uint32_t kPn532TimeoutMs = 1200;
+static const uint32_t kPn532HandshakeTimeoutMs = 2000;
 
 static String read_line(uint32_t timeout_ms) {
   String line;
@@ -76,26 +79,32 @@ static String read_line(uint32_t timeout_ms) {
   return line;
 }
 
+static void flush_host_input() {
+  while (Serial.available() > 0) { (void)Serial.read(); }
+}
+
 static bool parse_int(const String& s, int& out) {
   if (s.length() == 0) return false;
   char* end = nullptr;
   long v = strtol(s.c_str(), &end, 10);
-  if (end == s.c_str()) return false;
+  if (end == s.c_str() || *end != '\0') return false;
   out = (int)v;
   return true;
 }
 
 static int prompt_pin(const char* label, int def) {
-  Serial.print(label);
-  Serial.print(" [");
-  if (def >= 0) Serial.print(def);
-  else Serial.print("default");
-  Serial.print("]: ");
-  String line = read_line(kPromptTimeoutMs);
-  if (line.length() == 0) return def;
-  int v = def;
-  if (parse_int(line, v)) return v;
-  return def;
+  while (true) {
+    Serial.print(label);
+    Serial.print(" [");
+    if (def >= 0) Serial.print(def);
+    else Serial.print("default");
+    Serial.print("]: ");
+    String line = read_line(kPromptTimeoutMs);
+    if (line.length() == 0) return def;
+    int v = def;
+    if (parse_int(line, v)) return v;
+    Serial.println("Invalid input. Enter a number or blank for default.");
+  }
 }
 
 static bool prompt_sd_erase() {
@@ -170,6 +179,9 @@ static void test_psram() {
 
 static void test_partitions() {
   Serial.println("[STEP 1][DBG] test_partitions begin");
+  Serial.printf("[STEP 1][DBG] cfg PARTITION_ENUM=%d PARTITION_READS=%d\n",
+              (int)WSS_DIAG_PARTITION_ENUM,
+              (int)WSS_DIAG_PARTITION_READS);
 #if !WSS_DIAG_PARTITION_ENUM
   Serial.println("[STEP 1][DBG] test_partitions end");
   return;
@@ -324,6 +336,11 @@ static bool read_bytes(HardwareSerial& serial, uint8_t* buf, size_t len, uint32_
   return got == len;
 }
 
+static uint32_t remaining_ms(uint32_t deadline_ms) {
+  int32_t remaining = (int32_t)(deadline_ms - millis());
+  return (remaining > 0) ? (uint32_t)remaining : 0;
+}
+
 static void pn532_send_cmd(HardwareSerial& serial, const uint8_t* data, size_t len) {
   uint8_t preamble[] = {0x00, 0x00, 0xFF};
   serial.write(preamble, sizeof(preamble));
@@ -342,7 +359,10 @@ static void pn532_send_cmd(HardwareSerial& serial, const uint8_t* data, size_t l
   serial.flush();
 }
 
-static bool pn532_get_firmware(HardwareSerial& serial, uint8_t* out, size_t out_len) {
+static bool pn532_get_firmware(HardwareSerial& serial, uint8_t* out, size_t out_len,
+                               uint32_t timeout_ms, bool* timed_out) {
+  if (timed_out) *timed_out = false;
+  uint32_t deadline_ms = millis() + timeout_ms;
   const uint8_t wake[] = {0x55, 0x55, 0x00, 0x00, 0x00};
   serial.write(wake, sizeof(wake));
   serial.flush();
@@ -352,12 +372,20 @@ static bool pn532_get_firmware(HardwareSerial& serial, uint8_t* out, size_t out_
   pn532_send_cmd(serial, cmd, sizeof(cmd));
 
   uint8_t ack[6] = {0};
-  if (!read_bytes(serial, ack, sizeof(ack), kPn532TimeoutMs)) return false;
+  uint32_t remaining = remaining_ms(deadline_ms);
+  if (remaining == 0 || !read_bytes(serial, ack, sizeof(ack), remaining)) {
+    if (timed_out) *timed_out = true;
+    return false;
+  }
   const uint8_t expect_ack[] = {0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00};
   if (memcmp(ack, expect_ack, sizeof(ack)) != 0) return false;
 
   uint8_t header[5] = {0};
-  if (!read_bytes(serial, header, sizeof(header), kPn532TimeoutMs)) return false;
+  remaining = remaining_ms(deadline_ms);
+  if (remaining == 0 || !read_bytes(serial, header, sizeof(header), remaining)) {
+    if (timed_out) *timed_out = true;
+    return false;
+  }
   if (!(header[0] == 0x00 && header[1] == 0x00 && header[2] == 0xFF)) return false;
   uint8_t len = header[3];
   uint8_t lcs = header[4];
@@ -365,11 +393,23 @@ static bool pn532_get_firmware(HardwareSerial& serial, uint8_t* out, size_t out_
 
   uint8_t data[32] = {0};
   if (len > sizeof(data)) return false;
-  if (!read_bytes(serial, data, len, kPn532TimeoutMs)) return false;
+  remaining = remaining_ms(deadline_ms);
+  if (remaining == 0 || !read_bytes(serial, data, len, remaining)) {
+    if (timed_out) *timed_out = true;
+    return false;
+  }
   uint8_t dcs = 0;
-  if (!read_bytes(serial, &dcs, 1, kPn532TimeoutMs)) return false;
+  remaining = remaining_ms(deadline_ms);
+  if (remaining == 0 || !read_bytes(serial, &dcs, 1, remaining)) {
+    if (timed_out) *timed_out = true;
+    return false;
+  }
   uint8_t post = 0;
-  if (!read_bytes(serial, &post, 1, kPn532TimeoutMs)) return false;
+  remaining = remaining_ms(deadline_ms);
+  if (remaining == 0 || !read_bytes(serial, &post, 1, remaining)) {
+    if (timed_out) *timed_out = true;
+    return false;
+  }
 
   uint8_t sum = 0;
   for (uint8_t i = 0; i < len; i++) sum += data[i];
@@ -385,13 +425,21 @@ static bool pn532_get_firmware(HardwareSerial& serial, uint8_t* out, size_t out_
 }
 
 static void test_pn532_uart() {
+  if (WSS_DIAG_SKIP_PN532) {
+    Serial.println("[STEP 5] skipped (WSS_DIAG_SKIP_PN532=1)");
+    return;
+  }
   Serial.println("[STEP 5] PN532 UART (HSU) handshake");
   int rx = WSS_DIAG_PN532_UART_RX;
   int tx = WSS_DIAG_PN532_UART_TX;
-  Serial.printf("- Default RX=%d TX=%d (override at prompt)\\n", rx, tx);
+  Serial.printf("- Default RX=%d TX=%d (override at prompt)\n", rx, tx);
+  // Flush any buffered host input so prompts don't auto-consume garbage.
+  flush_host_input();
   rx = prompt_pin("Enter PN532 RX pin", rx);
+  // Flush any buffered host input so prompts don't auto-consume garbage.
+  flush_host_input();
   tx = prompt_pin("Enter PN532 TX pin", tx);
-  Serial.printf("- Using RX=%d TX=%d\\n", rx, tx);
+  Serial.printf("- Using RX=%d TX=%d\n", rx, tx);
 
   HardwareSerial& pn_serial = Serial2;
   if (rx < 0 || tx < 0) {
@@ -402,16 +450,20 @@ static void test_pn532_uart() {
       Serial.println("- PN532 UART test skipped: pin in denylist.");
       return;
     }
+    pinMode(rx, INPUT_PULLUP);
     pn_serial.begin(WSS_DIAG_PN532_UART_BAUD, SERIAL_8N1, rx, tx);
   }
   while (pn_serial.available()) pn_serial.read();
   delay(100);
 
   uint8_t fw[4] = {0};
-  bool ok = pn532_get_firmware(pn_serial, fw, sizeof(fw));
+  bool timed_out = false;
+  bool ok = pn532_get_firmware(pn_serial, fw, sizeof(fw), kPn532HandshakeTimeoutMs, &timed_out);
   if (ok) {
     Serial.printf("- PN532 firmware: IC=0x%02X Ver=%u Rev=%u Support=0x%02X\n",
                   fw[0], fw[1], fw[2], fw[3]);
+  } else if (timed_out) {
+    Serial.println("PN532: no response (timeout). Check: DIP=HSU/UART, wiring RX/TX crossed, GND shared.");
   } else {
     Serial.println("- PN532 firmware read: FAIL");
   }
