@@ -164,17 +164,31 @@ static void test_partitions() {
   esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY,
                                                    ESP_PARTITION_SUBTYPE_ANY, nullptr);
   esp_partition_iterator_t it_head = it;
+  uint32_t line_idx = 0;
+  const size_t kChecksumSampleBytes = 256;
+  const size_t kReadChunkBytes = 64;
   while (it) {
+    line_idx++;
+    Serial.printf("[STEP 1][DBG] begin line=%u\n", line_idx);
     const esp_partition_t* p = esp_partition_get(it);
-    uint8_t buf[16] = {0};
-    esp_err_t err = esp_partition_read(p, 0, buf, sizeof(buf));
+    uint8_t buf[kReadChunkBytes] = {0};
+    const size_t sample_len = (p->size < kChecksumSampleBytes) ? p->size : kChecksumSampleBytes;
     uint32_t sum = 0;
-    if (err == ESP_OK) {
-      for (size_t i = 0; i < sizeof(buf); i++) sum += buf[i];
+    esp_err_t err = ESP_OK;
+    size_t offset = 0;
+    while ((err == ESP_OK) && (offset < sample_len)) {
+      const size_t to_read = ((sample_len - offset) < kReadChunkBytes)
+                                 ? (sample_len - offset)
+                                 : kReadChunkBytes;
+      err = esp_partition_read(p, offset, buf, to_read);
+      if (err != ESP_OK) break;
+      for (size_t i = 0; i < to_read; i++) sum += buf[i];
+      offset += to_read;
     }
-    Serial.printf("- %s type=%u subtype=0x%02x addr=0x%06x size=%u read=%s sum=%u\n",
+    Serial.printf("- %s type=%u subtype=0x%02x addr=0x%06x size=%u read=%s sum(first%u)=%u\n",
                   p->label, p->type, p->subtype, p->address, p->size,
-                  (err == ESP_OK) ? "OK" : "FAIL", sum);
+                  (err == ESP_OK) ? "OK" : "FAIL", (unsigned)sample_len, sum);
+    Serial.printf("[STEP 1][DBG] end line=%u err=%d\n", line_idx, (int)err);
     it = esp_partition_next(it);
   }
   if (it_head) esp_partition_iterator_release(it_head);
