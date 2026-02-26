@@ -24,6 +24,11 @@ This document describes how to build and run the diagnostics firmware described 
   - For ESP32-S3, defaults are RX=44 and TX=43 (TXD/RXD header pins). The chosen pins are printed before the test.
   - Enter explicit pins at the prompt to override defaults if wiring differs.
 
+## Troubleshooting notes
+
+- PlatformIO monitor menu (Ctrl+T) can cause "unknown menu character Ctrl+J". If prompts behave oddly, exit monitor (Ctrl+C) and restart.
+- If PN532 is not connected, Step 5 may time out. Enable `WSS_DIAG_SKIP_PN532=1` in `platformio.ini` for `diagnostic_esp32s3` until headers/wiring are ready.
+
 ## If PN532 test fails
 
 - Confirm PN532 power and GND are correct.
