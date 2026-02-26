@@ -47,6 +47,12 @@
 #ifndef WSS_DIAG_STOP_AFTER_STEP1
 #define WSS_DIAG_STOP_AFTER_STEP1 0
 #endif
+#ifndef WSS_DIAG_PARTITION_READS
+#define WSS_DIAG_PARTITION_READS 1
+#endif
+#ifndef WSS_DIAG_PARTITION_ENUM
+#define WSS_DIAG_PARTITION_ENUM 1
+#endif
 
 static const uint32_t kPromptTimeoutMs = 15000;
 static const uint32_t kPn532TimeoutMs = 1200;
@@ -163,6 +169,11 @@ static void test_psram() {
 }
 
 static void test_partitions() {
+  Serial.println("[STEP 1][DBG] test_partitions begin");
+#if !WSS_DIAG_PARTITION_ENUM
+  Serial.println("[STEP 1][DBG] test_partitions end");
+  return;
+#endif
   Serial.println("[STEP 1] Flash partition summary");
   esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_ANY,
                                                    ESP_PARTITION_SUBTYPE_ANY, nullptr);
@@ -178,6 +189,8 @@ static void test_partitions() {
     const size_t sample_len = (p->size < kChecksumSampleBytes) ? p->size : kChecksumSampleBytes;
     uint32_t sum = 0;
     esp_err_t err = ESP_OK;
+    const char* read_status = "SKIP";
+#if WSS_DIAG_PARTITION_READS
     size_t offset = 0;
     while ((err == ESP_OK) && (offset < sample_len)) {
       const size_t to_read = ((sample_len - offset) < kReadChunkBytes)
@@ -188,13 +201,21 @@ static void test_partitions() {
       for (size_t i = 0; i < to_read; i++) sum += buf[i];
       offset += to_read;
     }
+    read_status = (err == ESP_OK) ? "OK" : "FAIL";
+#endif
     Serial.printf("- %s type=%u subtype=0x%02x addr=0x%06x size=%u read=%s sum(first%u)=%u\n",
                   p->label, p->type, p->subtype, p->address, p->size,
-                  (err == ESP_OK) ? "OK" : "FAIL", (unsigned)sample_len, sum);
+                  read_status,
+                  (unsigned)sample_len, sum);
+#if WSS_DIAG_PARTITION_READS
     Serial.printf("[STEP 1][DBG] end line=%u err=%d\n", line_idx, (int)err);
+#else
+    Serial.printf("[STEP 1][DBG] end line=%u read=SKIP\n", line_idx);
+#endif
     it = esp_partition_next(it);
   }
   if (it_head) esp_partition_iterator_release(it_head);
+  Serial.println("[STEP 1][DBG] test_partitions end");
 }
 
 static void test_i2c_scan() {
