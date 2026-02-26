@@ -44,6 +44,9 @@
 #ifndef WSS_DIAG_TARGET_ESP32S3
 #define WSS_DIAG_TARGET_ESP32S3 0
 #endif
+#ifndef WSS_DIAG_STOP_AFTER_STEP1
+#define WSS_DIAG_STOP_AFTER_STEP1 0
+#endif
 
 static const uint32_t kPromptTimeoutMs = 15000;
 static const uint32_t kPn532TimeoutMs = 1200;
@@ -407,6 +410,19 @@ void setup() {
   factory_restore_best_effort();
   test_psram();
   test_partitions();
+  Serial.println("[DBG] after test_partitions");
+  bool heap_ok_after_step1 = heap_caps_check_integrity_all(true);
+  size_t free_8bit_after_step1 = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+  size_t free_psram_after_step1 = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  Serial.printf("[DBG] heap_integrity_after_step1=%s\n", heap_ok_after_step1 ? "OK" : "FAIL");
+  Serial.printf("[DBG] free_heap_8bit_after_step1=%u\n", (unsigned)free_8bit_after_step1);
+  Serial.printf("[DBG] free_psram_after_step1=%u\n", (unsigned)free_psram_after_step1);
+#if WSS_DIAG_STOP_AFTER_STEP1
+  Serial.println("[DBG] STOP after Step 1");
+  while (true) {
+    delay(1000);
+  }
+#endif
   test_i2c_scan();
   test_sd();
   test_pin_probe();
