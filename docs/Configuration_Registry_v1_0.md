@@ -16,6 +16,7 @@ This doc defines all user-adjustable parameters, their meaning, ranges, defaults
   - risk notes
 - Config changes are logged (`config_change`), without leaking secrets.
 - Config includes a `schema_version` field.
+- Defaults are board-profile specific; the detected board profile is authoritative for defaults.
 
 ## 2) Proposed Parameters (Initial Set)
 
@@ -46,10 +47,15 @@ This doc defines all user-adjustable parameters, their meaning, ranges, defaults
 - `invalid_scan_window_s` (int, default 30)
 - `invalid_scan_max` (int, default 5)
 - `lockout_duration_s` (int, default 60)
-- `nfc_interface` (enum: spi|i2c, default spi)
+- `nfc_interface` (enum: spi|i2c|uart, default spi)
 - `nfc_spi_cs_gpio` (int, default 27)
 - `nfc_spi_rst_gpio` (int, default 33)
 - `nfc_spi_irq_gpio` (int, default 32)
+- `nfc_uart_rx_gpio` (int, default per board profile)
+- `nfc_uart_tx_gpio` (int, default per board profile)
+- `nfc_uart_reset_gpio` (int, optional; default per board profile if used)
+
+PN532 UART note: the library default baud is fixed at 115200 unless explicitly changed in code.
 
 ### Alarm Outputs
 - `silenced_duration_s` (int, default 180)

@@ -120,6 +120,12 @@ V1 requirement:
 - `setup_last_step` (when present) is used to resume or highlight the next step on initial entry only.
 - User can re-run wizard at any time (Admin Authenticated only), or edit specific sections without re-running the entire wizard.
 
+### Board-aware pin policy (Setup Wizard contract)
+- The wizard must show **Detected hardware profile** as a read-only line sourced from firmware.
+- UI PLACEMENT LOCK: The **Detected hardware profile** line MUST be placed on Step 1 (Welcome + Admin Password), immediately below the step title and immediately above the Admin Password input.
+- Wizard safe defaults and pin allowlists must come from the detected board profile.
+- Unknown board profile must show an explicit warning and use conservative defaults; do not silently guess pins.
+
 ### Wizard steps (V1, M7.2 order)
 1) **Welcome + Admin Password** (merged; guided operator instructions)
 2) **Network** (change AP password from default; SSID change optional; STA optional)
