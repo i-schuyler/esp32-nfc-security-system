@@ -23,13 +23,13 @@ jobs:
         with:
           path: |
             ~/.platformio
-          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'src/**', 'include/**', 'lib/**', 'data/**', 'partitions.csv') }}
+          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'src/**', 'include/**', 'lib/**', 'data/**', 'partitions.csv', 'partitions/**', 'boards/**') }}
 
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
       - name: PlatformIO compile-check
-        run: pio run -e esp32dev
+        run: pio run -e esp32dev -e esp32-s3-devkitc-1-n32r16v
 
       # Build filesystem image + upload artifacts only when manually dispatched or on tags later
       - name: Build LittleFS image
