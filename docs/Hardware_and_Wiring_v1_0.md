@@ -11,11 +11,20 @@ This doc defines the V1 hardware assumptions and wiring contract.
 ## Supported Hardware (V1)
 
 - Supported baseline: **ESP32 DevKit V1 (ESP-WROOM-32)**. Wiring defaults are defined in `docs/Wiring_Instructions_DevKitV1_v1_0.md`.
-- Planned / in-progress: **ESP32-S3-DEV-KIT-N32R16V-M** (Waveshare ESP32-S3-Dev-Kit-N32R16V). Investigation only; no canonical pin map or allowlist yet. See `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`.
+- Supported main firmware (board profile): **ESP32-S3-DEV-KIT-N32R16V-M** (Waveshare ESP32-S3-Dev-Kit-N32R16V, ESP32-S3-WROOM-2 N32R16). Wiring defaults are defined in `docs/Wiring_Instructions_ESP32S3_N32R16v_v1_0.md`.
+- Investigation notes (non-canonical): `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`.
+
+## Board Profile IDs (V1)
+
+Board Profile ID is a stable identifier used by firmware + UI to select safe defaults and pin allowlists. It is displayed as a read-only "Detected hardware profile" line in the Setup Wizard.
+
+- `esp32_devkit_v1_wroom32` — ESP32 DevKit V1 (ESP-WROOM-32)
+- `esp32s3_devkit_n32r16v_m` — ESP32-S3-DEV-KIT-N32R16V-M (ESP32-S3-WROOM-2 N32R16)
 
 ## ESP32-S3 (WROOM-2) constraints
 
-- GPIO35/36/37 are not allowed (reserved for flash/PSRAM internal use).
+- Do not use (conservative; in-package flash/PSRAM on ESP32-S3-WROOM-2): GPIO26, GPIO27, GPIO28, GPIO29, GPIO30, GPIO31, GPIO32.
+- Avoid strapping/USB/JTAG/reserved pins until verified for this exact board revision; see `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`.
 
 ## 1) Required Modules (V1)
 
@@ -82,7 +91,7 @@ Security:
 - Never display or log secrets (Wi-Fi passwords, admin password, tokens, raw NFC UID).
 
 Default recommended pin map:
-- Recommended defaults are defined in `Wiring_Instructions_DevKitV1_v1_0.md`.
+- Recommended defaults are defined in `Wiring_Instructions_DevKitV1_v1_0.md` and `Wiring_Instructions_ESP32S3_N32R16v_v1_0.md`.
 
 ## Pin Allowlist Policy (DevKit V1)
 

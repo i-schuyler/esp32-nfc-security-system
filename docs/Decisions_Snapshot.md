@@ -34,3 +34,7 @@ Rules:
 - [LOCKED] NFC eligibility gating applies only when setup is complete, at least one Admin card exists in the allowlist, and the reader is present and healthy.
 - [LOCKED] During setup, or when no Admin card exists, or when the reader is unhealthy, admin password login is allowed to bootstrap the first Admin card.
 - [LOCKED] Provisioning remains Admin Authenticated (admin token required).
+
+## D5 — 2026-02-27 — ESP32-S3 board profile + board-aware wizard [LOCKED]
+- [LOCKED] Board profile `esp32s3_devkit_n32r16v_m` is supported for main firmware with canonical wiring in `docs/Wiring_Instructions_ESP32S3_N32R16v_v1_0.md`.
+- [LOCKED] Setup Wizard is board-aware: detected hardware profile is shown read-only on Step 1 and governs pin defaults/allowlists; unknown profile shows an explicit warning and conservative defaults.
