@@ -24,6 +24,8 @@ Board Profile ID is a stable identifier used by firmware + UI to select safe def
 ## ESP32-S3 (WROOM-2) constraints
 
 - Do not use (conservative; in-package flash/PSRAM on ESP32-S3-WROOM-2): GPIO26, GPIO27, GPIO28, GPIO29, GPIO30, GPIO31, GPIO32.
+- Reserve GPIO19/GPIO20 for USB D-/D+ when USB CDC on boot is required; do not use them for inputs/outputs/sensors.
+- Reserve GPIO33/GPIO34/GPIO35/GPIO36/GPIO37 when using OPI flash/PSRAM (N32R16 board profile).
 - Avoid strapping/USB/JTAG/reserved pins until verified for this exact board revision; see `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`.
 
 ## 1) Required Modules (V1)
