@@ -6,6 +6,10 @@ See `docs/Hardware_and_Wiring_v1_0.md` for the hardware contract and board profi
 
 Board Profile ID: `esp32s3_devkit_n32r16v_m`
 
+Pin constraints (ESP32-S3-DEV-KIT-N32R16V-M):
+- Reserve GPIO19/GPIO20 for USB D-/D+ when USB CDC on boot is required.
+- Reserve GPIO33/GPIO34/GPIO35/GPIO36/GPIO37 when using OPI flash/PSRAM.
+
 ESP32-S3 DEV-KIT (Row 1 = USB end) — Combined wiring (UART NFC + SD SPI + DS3231 I2C)
 
 POWER (shared)
@@ -17,6 +21,7 @@ ELECHOUSE NFC V3 (UART)
 - VCC  -> Row 21 Right (3V3)
 - TXD  -> Row 20 Left (RXD)
 - RXD  -> Row 21 Left (TXD)
+Note: PN532 RST is optional and not wired by default; if needed later, prefer GPIO14 (if present and unused in the default wiring).
 
 DS3231 RTC (I2C)
 - GND  -> Row 1 Right (GND)
