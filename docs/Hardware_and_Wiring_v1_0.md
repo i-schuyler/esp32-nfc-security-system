@@ -21,6 +21,8 @@ Board Profile ID is a stable identifier used by firmware + UI to select safe def
 - `esp32_devkit_v1_wroom32` — ESP32 DevKit V1 (ESP-WROOM-32)
 - `esp32s3_devkit_n32r16v_m` — ESP32-S3-DEV-KIT-N32R16V-M (ESP32-S3-WROOM-2 N32R16)
 
+Pin policy source of truth: firmware emits `board_profile_id` and `pin_policy`, and the UI must consume that contract for defaults and allowlists. See "Board-aware pin policy" in `docs/Web_UI_Spec_v1_0.md`.
+
 ## ESP32-S3 (WROOM-2) constraints
 
 - Do not use (conservative; in-package flash/PSRAM on ESP32-S3-WROOM-2): GPIO26, GPIO27, GPIO28, GPIO29, GPIO30, GPIO31, GPIO32.
