@@ -126,6 +126,18 @@ V1 requirement:
 - Wizard safe defaults and pin allowlists must come from the detected board profile.
 - Unknown board profile must show an explicit warning and use conservative defaults; do not silently guess pins.
 
+Firmware pin policy is authoritative. The UI must not hardcode per-board allowlists or defaults; it must consume the firmware-emitted pin policy for all board-aware pin choices.
+
+Append-only `/api/status` payload shape additions:
+- `status.board_profile_id` (string)
+- `status.board_profile_name` (string, optional)
+- `status.pin_policy` (object)
+  - `roles` (object) with keys: `i2c.sda`, `i2c.scl`, `spi.sck`, `spi.miso`, `spi.mosi`, `sd.cs`, `nfc.uart_rx`, `nfc.uart_tx`, `nfc.rst` (optional)
+  - each role value: `default_gpio` (int), `allowed_gpios` (array[int]), `note` (string, optional)
+  - `reserved_gpios` (array[int]) (example: [19, 20, 33, 34, 35, 36, 37] for the ESP32-S3 profile)
+
+PLACEMENT LOCK (restated): The **Detected hardware profile** line MUST be placed on Step 1 (Welcome + Admin Password), immediately below the step title and immediately above the Admin Password input.
+
 ### Wizard steps (V1, M7.2 order)
 1) **Welcome + Admin Password** (merged; guided operator instructions)
 2) **Network** (change AP password from default; SSID change optional; STA optional)
