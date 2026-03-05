@@ -152,6 +152,9 @@ static bool output_pin_conflicts(int pin, const JsonObjectConst& root) {
     nfc_cs = root["nfc_spi_cs_gpio"] | -1;
     nfc_rst = root["nfc_spi_rst_gpio"] | -1;
     nfc_irq = root["nfc_spi_irq_gpio"] | -1;
+  } else if (nfc_iface == "uart") {
+    nfc_cs = root["nfc_uart_rx_gpio"] | -1;
+    nfc_rst = root["nfc_uart_tx_gpio"] | -1;
   }
 
   const bool sd_enabled = root["sd_enabled"] | true;
@@ -179,6 +182,10 @@ static bool input_pin_conflicts(int pin, const JsonObjectConst& root) {
     int nfc_rst = root["nfc_spi_rst_gpio"] | -1;
     int nfc_irq = root["nfc_spi_irq_gpio"] | -1;
     if (pin == nfc_cs || pin == nfc_rst || pin == nfc_irq) return true;
+  } else if (nfc_iface == "uart") {
+    int nfc_rx = root["nfc_uart_rx_gpio"] | -1;
+    int nfc_tx = root["nfc_uart_tx_gpio"] | -1;
+    if (pin == nfc_rx || pin == nfc_tx) return true;
   }
 
   bool sd_enabled = root["sd_enabled"] | true;
@@ -197,6 +204,24 @@ static bool input_pin_conflicts(int pin, const JsonObjectConst& root) {
 
   if (spi_bus_in_use(root) && is_spi_bus_pin(pin)) return true;
   return false;
+}
+
+static bool validate_nfc_pins(String& err) {
+  if (!g_cfg) return true;
+  JsonObjectConst root = g_cfg->doc().as<JsonObjectConst>();
+  String nfc_iface = root["nfc_interface"] | "spi";
+  if (nfc_iface != "uart") {
+    err = "";
+    return true;
+  }
+  int rx = root["nfc_uart_rx_gpio"] | -1;
+  int tx = root["nfc_uart_tx_gpio"] | -1;
+  if (!wss_pin_policy_gpio_allowed("nfc.uart_rx", rx)) { err = "nfc_uart_rx_not_allowed"; return false; }
+  if (!wss_pin_policy_gpio_allowed("nfc.uart_tx", tx)) { err = "nfc_uart_tx_not_allowed"; return false; }
+  if (rx < 0 || tx < 0) { err = "nfc_uart_pins_unset"; return false; }
+  if (rx == tx) { err = "nfc_uart_pin_conflict"; return false; }
+  err = "";
+  return true;
 }
 
 static bool validate_output_pins(String& err) {
@@ -1045,6 +1070,11 @@ static void handle_wizard_set_step() {
     server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
     return;
   }
+  if (!validate_nfc_pins(pin_err)) {
+    log_wizard_event("warn", "wizard_step_save_fail", "wizard step save failed", step.c_str(), pin_err.c_str());
+    server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
+    return;
+  }
 
   String save_err;
   g_cfg->ensure_runtime_defaults();
@@ -1161,6 +1191,10 @@ static void handle_config_post() {
       return;
     }
     if (!validate_input_pins(pin_err)) {
+      server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
+      return;
+    }
+    if (!validate_nfc_pins(pin_err)) {
       server.send(400, "application/json", String("{\"error\":\"") + pin_err + "\"}");
       return;
     }
