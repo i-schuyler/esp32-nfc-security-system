@@ -18,6 +18,7 @@
 
 #include "config/config_store.h"
 #include "logging/event_logger.h"
+#include "config/pin_policy.h"
 #include "storage/time_manager.h"
 #include "storage/storage_manager.h"
 #include "wifi/wifi_manager.h"
@@ -121,48 +122,11 @@ static void send_json(int code, const JsonDocument& doc) {
 }
 
 static bool output_pin_allowed(int pin) {
-  if (pin < 0) return true;
-  switch (pin) {
-    case 13:
-    case 14:
-    case 16:
-    case 17:
-    case 25:
-    case 26:
-    case 27:
-    case 32:
-    case 33:
-      return true;
-    default:
-      return false;
-  }
+  return wss_pin_policy_gpio_allowed("outputs.gpio", pin);
 }
 
 static bool input_pin_allowed(int pin) {
-  if (pin < 0) return true;
-  switch (pin) {
-    case 13:
-    case 14:
-    case 16:
-    case 17:
-    case 18:
-    case 19:
-    case 21:
-    case 22:
-    case 23:
-    case 25:
-    case 26:
-    case 27:
-    case 32:
-    case 33:
-    case 34:
-    case 35:
-    case 36:
-    case 39:
-      return true;
-    default:
-      return false;
-  }
+  return wss_pin_policy_gpio_allowed("inputs.gpio", pin);
 }
 
 static bool spi_bus_in_use(const JsonObjectConst& root) {
@@ -172,7 +136,10 @@ static bool spi_bus_in_use(const JsonObjectConst& root) {
 }
 
 static bool is_spi_bus_pin(int pin) {
-  return pin == 18 || pin == 19 || pin == 23;
+  if (pin < 0) return false;
+  return pin == wss_pin_policy_role_default_gpio("spi.sck", 18)
+    || pin == wss_pin_policy_role_default_gpio("spi.miso", 19)
+    || pin == wss_pin_policy_role_default_gpio("spi.mosi", 23);
 }
 
 static bool output_pin_conflicts(int pin, const JsonObjectConst& root) {
@@ -334,7 +301,7 @@ static void serve_setup_page() {
 
 static void handle_status() {
   // M5: sensor status adds nested arrays; keep headroom.
-  StaticJsonDocument<2048> doc;
+  StaticJsonDocument<4096> doc;
   auto boot = wss_get_boot_info();
   auto wifi = wss_wifi_status();
   auto tstat = wss_time_status();
@@ -347,6 +314,16 @@ static void handle_status() {
   doc["config_schema_version"] = WSS_CONFIG_SCHEMA_VERSION;
   doc["log_schema_version"] = WSS_LOG_SCHEMA_VERSION;
   doc["nfc_record_version"] = WSS_NFC_RECORD_VERSION;
+
+  const WssPinPolicy& policy = wss_pin_policy();
+  doc["board_profile_id"] = policy.board_profile_id;
+  if (policy.board_profile_name && policy.board_profile_name[0]) {
+    doc["board_profile_name"] = policy.board_profile_name;
+  }
+  {
+    JsonObject pin_policy = doc.createNestedObject("pin_policy");
+    wss_pin_policy_write_status_json(pin_policy);
+  }
 
   doc["reset_reason"] = boot.reset_reason;
   doc["device_suffix"] = boot.chip_id_suffix;

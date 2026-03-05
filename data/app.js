@@ -20,6 +20,9 @@
     adminActive: false,
     adminRemainingS: 0,
     wizInitialized: false,
+    boardProfileId: '',
+    boardProfileName: '',
+    pinPolicy: null,
     motionKind: 'gpio',
     ld2410b: { rx: 16, tx: 17, baud: LD2410B_DEFAULT_BAUD },
     nfc: { iface: 'spi', cs: 27, irq: 32, rst: 33 },
@@ -50,6 +53,30 @@
     },
     nfcProvision: { stage: 'idle', startScanMs: 0, firstScanMs: 0, confirmedRole: 'unknown' },
   };
+
+  function pinPolicyRole(key) {
+    const policy = state.pinPolicy;
+    if (!policy || !policy.roles) return null;
+    return policy.roles[key] || null;
+  }
+
+  function pinPolicyAllowed(key, fallback) {
+    const role = pinPolicyRole(key);
+    if (role && Array.isArray(role.allowed_gpios)) return role.allowed_gpios.slice();
+    return (fallback || []).slice();
+  }
+
+  function pinPolicyDefault(key, fallback) {
+    const role = pinPolicyRole(key);
+    if (role && typeof role.default_gpio === 'number') return role.default_gpio;
+    return fallback;
+  }
+
+  function pinPolicyReserved() {
+    const policy = state.pinPolicy;
+    if (policy && Array.isArray(policy.reserved_gpios)) return policy.reserved_gpios;
+    return [];
+  }
   const APP_PAGE = (window.APP_PAGE || 'main');
   const isSetupPage = APP_PAGE === 'setup';
   const WIZARD_STEPS = [
@@ -377,6 +404,10 @@
     return pin >= 34 && pin <= 39;
   }
 
+  function isReservedPin(pin) {
+    return pinPolicyReserved().includes(pin);
+  }
+
   function pinValueText(pin, emptyText) {
     if (pin === undefined || pin === null || pin < 0) return emptyText || 'Not used';
     return String(pin);
@@ -388,6 +419,9 @@
 
     function claim(pin, role) {
       if (pin === undefined || pin === null || pin < 0) return;
+      if (isReservedPin(pin)) {
+        conflicts.push(`${role} uses reserved GPIO ${pin}`);
+      }
       const key = String(pin);
       if (!claims[key]) claims[key] = [];
       claims[key].push(role);
@@ -459,9 +493,14 @@
   }
 
   function buildPinMapRows() {
+    const sck = pinPolicyDefault('spi.sck', 18);
+    const miso = pinPolicyDefault('spi.miso', 19);
+    const mosi = pinPolicyDefault('spi.mosi', 23);
+    const sda = pinPolicyDefault('i2c.sda', 21);
+    const scl = pinPolicyDefault('i2c.scl', 22);
     const rows = [
-      { label: 'SPI bus (fixed)', value: 'SCK 18, MISO 19, MOSI 23' },
-      { label: 'I2C bus (fixed)', value: 'SDA 21, SCL 22' },
+      { label: 'SPI bus (fixed)', value: `SCK ${sck}, MISO ${miso}, MOSI ${mosi}` },
+      { label: 'I2C bus (fixed)', value: `SDA ${sda}, SCL ${scl}` },
     ];
 
     const sdEnabled = state.sd.enabled !== false;
@@ -598,6 +637,8 @@
     }
 
     if (step === 'welcome') {
+      const profile = state.boardProfileName || state.boardProfileId || 'Unknown';
+      addKv('Detected hardware profile', profile);
       addLabel('Setup is required until all steps are completed.');
       addLabel('Set the admin password to protect changes.');
       addInput('wiz_admin_password', 'Admin password (min 8)', 'password');
@@ -636,8 +677,10 @@
       addLabel('Not using SD? Disable SD logging to use flash ring.');
       const sdEnabled = $('wiz_sd_enabled');
       if (sdEnabled) sdEnabled.checked = state.sd.enabled !== false;
-      const csDefault = SD_CS_SAFE_PINS.includes(state.sd.cs) ? state.sd.cs : 13;
-      addSelect('wiz_sd_cs', 'SD CS (SPI)', SD_CS_SAFE_PINS.map((pin) => ({
+      const sdPins = pinPolicyAllowed('sd.cs', SD_CS_SAFE_PINS);
+      const sdDefault = pinPolicyDefault('sd.cs', 13);
+      const csDefault = sdPins.includes(state.sd.cs) ? state.sd.cs : sdDefault;
+      addSelect('wiz_sd_cs', 'SD CS (SPI)', sdPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })), String(csDefault));
@@ -664,19 +707,25 @@
       nfcHealthLine.textContent = 'NFC: Unknown until a reader is detected.';
       host.appendChild(nfcHealthLine);
       addLabel('NFC module: PN532 (SPI).');
-      const csDefault = PN532_CS_SAFE_PINS.includes(state.nfc.cs) ? state.nfc.cs : 27;
-      const irqDefault = PN532_IRQ_SAFE_PINS.includes(state.nfc.irq) ? state.nfc.irq : -1;
-      const rstDefault = PN532_RST_SAFE_PINS.includes(state.nfc.rst) ? state.nfc.rst : -1;
-      addSelect('wiz_nfc_cs', 'NFC CS (SPI)', PN532_CS_SAFE_PINS.map((pin) => ({
+      const nfcCsPins = pinPolicyAllowed('nfc.spi_cs', PN532_CS_SAFE_PINS);
+      const nfcIrqPins = pinPolicyAllowed('nfc.spi_irq', PN532_IRQ_SAFE_PINS);
+      const nfcRstPins = pinPolicyAllowed('nfc.spi_cs', PN532_RST_SAFE_PINS);
+      const nfcCsDefault = pinPolicyDefault('nfc.spi_cs', 27);
+      const nfcIrqDefault = pinPolicyDefault('nfc.spi_irq', -1);
+      const nfcRstDefault = pinPolicyDefault('nfc.spi_rst', -1);
+      const csDefault = nfcCsPins.includes(state.nfc.cs) ? state.nfc.cs : nfcCsDefault;
+      const irqDefault = nfcIrqPins.includes(state.nfc.irq) ? state.nfc.irq : nfcIrqDefault;
+      const rstDefault = nfcRstPins.includes(state.nfc.rst) ? state.nfc.rst : nfcRstDefault;
+      addSelect('wiz_nfc_cs', 'NFC CS (SPI)', nfcCsPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })), String(csDefault));
-      const irqOptions = [{ value: '-1', label: 'Not used' }].concat(PN532_IRQ_SAFE_PINS.map((pin) => ({
+      const irqOptions = [{ value: '-1', label: 'Not used' }].concat(nfcIrqPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })));
       addSelect('wiz_nfc_irq', 'NFC IRQ (optional)', irqOptions, String(irqDefault));
-      const rstOptions = [{ value: '-1', label: 'Not used' }].concat(PN532_RST_SAFE_PINS.map((pin) => ({
+      const rstOptions = [{ value: '-1', label: 'Not used' }].concat(nfcRstPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })));
@@ -830,20 +879,25 @@
 
       addLdLabel('LD2410B: Unknown until UART data is seen.');
       addLdLabel('Check power and RX/TX if status stays Unknown.');
-      const rxDefault = LD2410B_SAFE_PINS.includes(state.ld2410b.rx) ? state.ld2410b.rx : 16;
-      const txDefault = LD2410B_SAFE_TX_PINS.includes(state.ld2410b.tx) ? state.ld2410b.tx : 17;
-      addLdSelect('wiz_ld2410b_rx', 'LD2410B RX (ESP32 RX2)', LD2410B_SAFE_PINS.map((pin) => ({
+      const ldRxPins = pinPolicyAllowed('ld2410b.rx', LD2410B_SAFE_PINS);
+      const ldTxPins = pinPolicyAllowed('ld2410b.tx', LD2410B_SAFE_TX_PINS);
+      const ldRxDefault = pinPolicyDefault('ld2410b.rx', 16);
+      const ldTxDefault = pinPolicyDefault('ld2410b.tx', 17);
+      const rxDefault = ldRxPins.includes(state.ld2410b.rx) ? state.ld2410b.rx : ldRxDefault;
+      const txDefault = ldTxPins.includes(state.ld2410b.tx) ? state.ld2410b.tx : ldTxDefault;
+      addLdSelect('wiz_ld2410b_rx', 'LD2410B RX (ESP32 RX2)', ldRxPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })), String(rxDefault));
-      addLdSelect('wiz_ld2410b_tx', 'LD2410B TX (ESP32 TX2)', LD2410B_SAFE_TX_PINS.map((pin) => ({
+      addLdSelect('wiz_ld2410b_tx', 'LD2410B TX (ESP32 TX2)', ldTxPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })), String(txDefault));
       const baudInput = addLdInput('wiz_ld2410b_baud', 'LD2410B baud', 'number', String(LD2410B_DEFAULT_BAUD));
       baudInput.value = String(state.ld2410b.baud || LD2410B_DEFAULT_BAUD);
 
-      const inputPinOptions = [{ value: '-1', label: 'Not used' }].concat(INPUT_GPIO_SAFE_PINS.map((pin) => ({
+      const inputPins = pinPolicyAllowed('inputs.gpio', INPUT_GPIO_SAFE_PINS);
+      const inputPinOptions = [{ value: '-1', label: 'Not used' }].concat(inputPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })));
@@ -887,7 +941,8 @@
     if (step === 'outputs') {
       addLabel('Outputs define alert behavior.');
       addLabel('Set output pins and polarity, then test before arming.');
-      const pinOptions = [{ value: '-1', label: 'Use default' }].concat(OUTPUT_GPIO_SAFE_PINS.map((pin) => ({
+      const outputPins = pinPolicyAllowed('outputs.gpio', OUTPUT_GPIO_SAFE_PINS);
+      const pinOptions = [{ value: '-1', label: 'Use default' }].concat(outputPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })));
@@ -936,6 +991,10 @@
     const r = await jget('/api/status');
     if (!r.ok) return;
     const j = r.json || {};
+
+    state.boardProfileId = j.board_profile_id || '';
+    state.boardProfileName = j.board_profile_name || '';
+    state.pinPolicy = j.pin_policy || null;
 
     state.setupRequired = !!j.setup_required;
     state.lastStep = normalizeStep(j.setup_last_step || 'welcome');
