@@ -141,3 +141,4 @@ These notes do not override canonical docs and are for planning only:
 
 - `docs/_investigation/esp32-s3-devkit-n32r16v-m_support_report.md`
 - `docs/_investigation/esp32-s3-dev-kit-n32r16v-m_pin_roles_and_allowlist_notes.md`
+- `docs/_investigation/adafruit_pn532_uart_api_note.md`
