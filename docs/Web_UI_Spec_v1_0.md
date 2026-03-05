@@ -138,6 +138,23 @@ Append-only `/api/status` payload shape additions:
 
 PLACEMENT LOCK (restated): The **Detected hardware profile** line MUST be placed on Step 1 (Welcome + Admin Password), immediately below the step title and immediately above the Admin Password input.
 
+#### NFC UART fields (Setup Wizard placement lock)
+Step: **Inputs (NFC + Sensors)**.
+
+Placement lock:
+1) The NFC Interface selector remains first within the NFC block.
+2) IF AND ONLY IF `nfc_interface == "uart"`:
+   - Show **NFC UART RX GPIO** selector immediately AFTER the NFC Interface selector.
+   - Show **NFC UART TX GPIO** selector immediately AFTER the RX selector.
+   - Do NOT add an RST selector; RST remains recommendation-only (text note allowed).
+3) Selector options MUST be derived from firmware pin_policy roles:
+   - `nfc.uart_rx` (default from `default_gpio`, options from `allowed_gpios`)
+   - `nfc.uart_tx` (default from `default_gpio`, options from `allowed_gpios`)
+
+UART TX/RX must be crossed (module TXD → ESP RXD).
+
+Compatibility: if `pin_policy` is missing (older firmware), the wizard uses existing fallback allowlists.
+
 ### Wizard steps (V1, M7.2 order)
 1) **Welcome + Admin Password** (merged; guided operator instructions)
 2) **Network** (change AP password from default; SSID change optional; STA optional)

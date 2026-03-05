@@ -57,6 +57,8 @@ This doc defines all user-adjustable parameters, their meaning, ranges, defaults
 
 PN532 UART note: the library default baud is fixed at 115200 unless explicitly changed in code.
 
+Setup Wizard uses `nfc_interface`, `nfc_uart_rx_gpio`, and `nfc_uart_tx_gpio` for UART configuration. `-1` means "Not used/unconfigured". Defaults and allowlists are board-profile specific and must come from firmware pin_policy.
+
 ### Alarm Outputs
 - `silenced_duration_s` (int, default 180)
 - `horn_active_low` (bool, default false) — when true, GPIO LOW = ON

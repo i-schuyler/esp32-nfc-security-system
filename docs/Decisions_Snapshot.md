@@ -41,3 +41,6 @@ Rules:
 
 ## D6 — 2026-03-03 — Firmware pin policy is authoritative [LOCKED]
 - [LOCKED] Firmware emits `board_profile_id` and `pin_policy`; the UI must consume this contract and must not hardcode per-board allowlists or defaults.
+
+## D7 — 2026-03-05 — NFC UART wizard placement lock [LOCKED]
+- [LOCKED] Setup Wizard Step "Inputs (NFC + Sensors)": NFC Interface selector first; when `nfc_interface == "uart"`, show NFC UART RX GPIO immediately after, then NFC UART TX GPIO. No RST selector (recommendation-only).
