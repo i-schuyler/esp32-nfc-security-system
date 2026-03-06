@@ -28,4 +28,5 @@ const WssPinPolicyRole* wss_pin_policy_role(const char* key);
 bool wss_pin_policy_gpio_allowed(const char* role_key, int pin);
 bool wss_pin_policy_gpio_reserved(int pin);
 int wss_pin_policy_role_default_gpio(const char* role_key, int fallback);
+const char* wss_pin_policy_default_nfc_interface();
 void wss_pin_policy_write_status_json(JsonObject out);

@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "../config/pin_config.h"
+#include "../config/pin_policy.h"
 #include "../logging/event_logger.h"
 
 #if WSS_FEATURE_RTC
@@ -76,10 +77,8 @@ void wss_time_begin(WssEventLogger* log) {
   g_time_status.pinmap_configured = true;
   int sda = WSS_PIN_I2C_SDA;
   int scl = WSS_PIN_I2C_SCL;
-  if (sda < 0 || scl < 0) {
-    sda = 21;
-    scl = 22;
-  }
+  if (sda < 0) sda = wss_pin_policy_role_default_gpio("i2c.sda", 21);
+  if (scl < 0) scl = wss_pin_policy_role_default_gpio("i2c.scl", 22);
   Wire.begin(sda, scl);
 
   if (!i2c_probe(0x68) || !g_rtc.begin()) {
