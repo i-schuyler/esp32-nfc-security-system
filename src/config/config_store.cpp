@@ -8,6 +8,7 @@
 
 #include "../logging/event_logger.h"
 #include "pin_config.h"
+#include "pin_policy.h"
 #include "version.h"
 
 static const char* kPrefsNamespace = "wss";
@@ -46,6 +47,10 @@ static bool json_equals(const JsonVariantConst& a, const JsonVariantConst& b) {
   serializeJson(a, sa);
   serializeJson(b, sb);
   return sa == sb;
+}
+
+static int board_default_gpio(const char* role_key, int fallback) {
+  return wss_pin_policy_role_default_gpio(role_key, fallback);
 }
 
 bool WssConfigStore::begin(const String& device_suffix, WssEventLogger* logger) {
@@ -184,11 +189,13 @@ void WssConfigStore::set_defaults() {
   root["nfc_url_record_preserve_if_possible"] = true;
   root["nfc_url"] = "http://192.168.4.1/";
 
-  // NFC interface + pins (M7.3 SPI defaults)
-  root["nfc_interface"] = "spi";
+  // NFC interface + pins use the detected board profile defaults.
+  root["nfc_interface"] = wss_pin_policy_default_nfc_interface();
   root["nfc_spi_cs_gpio"] = 27;
   root["nfc_spi_rst_gpio"] = 33;
   root["nfc_spi_irq_gpio"] = 32;
+  root["nfc_uart_rx_gpio"] = board_default_gpio("nfc.uart_rx", -1);
+  root["nfc_uart_tx_gpio"] = board_default_gpio("nfc.uart_tx", -1);
 
   // NFC / access (scaffolding)
   root["allow_user_arm"] = true;
@@ -255,7 +262,7 @@ void WssConfigStore::set_defaults() {
 
   // Storage
   root["sd_enabled"] = true;
-  root["sd_cs_gpio"] = 13;
+  root["sd_cs_gpio"] = board_default_gpio("sd.cs", 13);
   root["sd_required"] = false;
   root["log_retention_days"] = 365;
   root["hash_chain_logs"] = true;
@@ -309,11 +316,13 @@ bool WssConfigStore::validate_or_recover(String& err) {
   if (!root["control_web_enabled"].is<bool>()) root["control_web_enabled"] = true;
   if (!root["control_nfc_enabled"].is<bool>()) root["control_nfc_enabled"] = true;
   if (!root.containsKey("nfc_interface") || !root["nfc_interface"].is<const char*>()) {
-    root["nfc_interface"] = "spi";
+    root["nfc_interface"] = wss_pin_policy_default_nfc_interface();
   }
   if (!root["nfc_spi_cs_gpio"].is<long>()) root["nfc_spi_cs_gpio"] = 27;
   if (!root["nfc_spi_rst_gpio"].is<long>()) root["nfc_spi_rst_gpio"] = 33;
   if (!root["nfc_spi_irq_gpio"].is<long>()) root["nfc_spi_irq_gpio"] = 32;
+  if (!root["nfc_uart_rx_gpio"].is<long>()) root["nfc_uart_rx_gpio"] = board_default_gpio("nfc.uart_rx", -1);
+  if (!root["nfc_uart_tx_gpio"].is<long>()) root["nfc_uart_tx_gpio"] = board_default_gpio("nfc.uart_tx", -1);
 
   // M5: ensure per-sensor keys exist for older configs.
   if (!root["motion_enabled"].is<bool>()) root["motion_enabled"] = true;
@@ -355,7 +364,7 @@ bool WssConfigStore::validate_or_recover(String& err) {
   if (!root.containsKey("enclosure1_active_level") || !root["enclosure1_active_level"].is<const char*>()) root["enclosure1_active_level"] = "high";
 
   if (!root["sd_enabled"].is<bool>()) root["sd_enabled"] = true;
-  if (!root["sd_cs_gpio"].is<long>()) root["sd_cs_gpio"] = 13;
+  if (!root["sd_cs_gpio"].is<long>()) root["sd_cs_gpio"] = board_default_gpio("sd.cs", 13);
   if (!root["sd_required"].is<bool>()) root["sd_required"] = false;
 
   return true;

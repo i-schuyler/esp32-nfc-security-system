@@ -137,6 +137,14 @@ int wss_pin_policy_role_default_gpio(const char* role_key, int fallback) {
   return role->default_gpio;
 }
 
+const char* wss_pin_policy_default_nfc_interface() {
+#if WSS_BOARD_PROFILE_S3_N32R16V
+  return "uart";
+#else
+  return "spi";
+#endif
+}
+
 void wss_pin_policy_write_status_json(JsonObject out) {
   const WssPinPolicy& policy = wss_pin_policy();
   JsonArray reserved = out.createNestedArray("reserved_gpios");

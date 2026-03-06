@@ -8,6 +8,7 @@
 
 #include "../config/config_store.h"
 #include "../config/pin_config.h"
+#include "../config/pin_policy.h"
 #include "../logging/event_logger.h"
 #include "flash_ring.h"
 #include "time_manager.h"
@@ -42,12 +43,6 @@ static const char* kZeroHash64 = "0000000000000000000000000000000000000000000000
 
 // M3: retention enforcement pacing
 static uint32_t g_last_retention_check_ms = 0;
-
-#if WSS_FEATURE_SD
-static const int kSdSpiSck = 18;
-static const int kSdSpiMiso = 19;
-static const int kSdSpiMosi = 23;
-#endif
 
 static String date_key_utc(time_t t) {
   struct tm tm_utc;
@@ -367,7 +362,14 @@ static bool sd_try_mount(const char* reason) {
     return false;
   }
 
-  SPI.begin(kSdSpiSck, kSdSpiMiso, kSdSpiMosi, g_status.sd_cs_gpio);
+  int spi_sck = WSS_PIN_SPI_SCK;
+  int spi_miso = WSS_PIN_SPI_MISO;
+  int spi_mosi = WSS_PIN_SPI_MOSI;
+  if (spi_sck < 0) spi_sck = wss_pin_policy_role_default_gpio("spi.sck", 18);
+  if (spi_miso < 0) spi_miso = wss_pin_policy_role_default_gpio("spi.miso", 19);
+  if (spi_mosi < 0) spi_mosi = wss_pin_policy_role_default_gpio("spi.mosi", 23);
+
+  SPI.begin(spi_sck, spi_miso, spi_mosi, g_status.sd_cs_gpio);
 
   SdSpiConfig cfg(g_status.sd_cs_gpio, SHARED_SPI);
   if (!g_sd.begin(cfg)) {
@@ -644,10 +646,10 @@ void wss_storage_begin(WssConfigStore* cfg, WssEventLogger* log) {
   g_status.feature_enabled = true;
 
   bool sd_enabled = true;
-  int sd_cs_gpio = 13;
+  int sd_cs_gpio = wss_pin_policy_role_default_gpio("sd.cs", 13);
   if (g_cfg) {
     sd_enabled = g_cfg->doc()["sd_enabled"] | true;
-    sd_cs_gpio = g_cfg->doc()["sd_cs_gpio"] | 13;
+    sd_cs_gpio = g_cfg->doc()["sd_cs_gpio"] | sd_cs_gpio;
   }
   g_status.sd_enabled_cfg = sd_enabled;
   g_status.sd_cs_gpio = sd_cs_gpio;
