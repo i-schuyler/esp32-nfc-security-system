@@ -13,6 +13,7 @@ namespace {
 
 static Adafruit_PN532* g_pn532 = nullptr;
 static const uint32_t kPollIntervalMs = 120;
+static HardwareSerial* g_uart = &Serial1;
 
 static bool i2c_pins_configured() {
   return (WSS_PIN_I2C_SDA >= 0 && WSS_PIN_I2C_SCL >= 0 && WSS_PIN_NFC_IRQ >= 0 && WSS_PIN_NFC_RESET >= 0);
@@ -33,18 +34,39 @@ bool WssNfcReaderPn532::begin(const WssNfcPn532Config& cfg) {
   _last_error = "";
   _last_uid_len = 0;
 
-  if (cfg.use_spi) {
+  if (cfg.use_uart) {
+    if (cfg.uart_rx_gpio < 0 || cfg.uart_tx_gpio < 0) {
+      _last_error = "uart_pins_unset";
+      return false;
+    }
+    if (_use_spi || !_use_uart || _uart_rx_gpio != cfg.uart_rx_gpio || _uart_tx_gpio != cfg.uart_tx_gpio) {
+      if (g_pn532) {
+        delete g_pn532;
+        g_pn532 = nullptr;
+      }
+    }
+    _use_spi = false;
+    _use_uart = true;
+    _uart_rx_gpio = cfg.uart_rx_gpio;
+    _uart_tx_gpio = cfg.uart_tx_gpio;
+    g_uart->begin(115200, SERIAL_8N1, _uart_rx_gpio, _uart_tx_gpio);
+    // Adafruit UART constructor uses reset pin; 255 means "not connected".
+    if (!g_pn532) {
+      g_pn532 = new Adafruit_PN532(255, g_uart);
+    }
+  } else if (cfg.use_spi) {
     if (cfg.spi_cs_gpio < 0) {
       _last_error = "spi_cs_unset";
       return false;
     }
-    if (!_use_spi || _spi_cs_gpio != cfg.spi_cs_gpio) {
+    if (!_use_spi || _use_uart || _spi_cs_gpio != cfg.spi_cs_gpio) {
       if (g_pn532) {
         delete g_pn532;
         g_pn532 = nullptr;
       }
     }
     _use_spi = true;
+    _use_uart = false;
     _spi_cs_gpio = cfg.spi_cs_gpio;
     _spi_irq_gpio = cfg.spi_irq_gpio;
     _spi_rst_gpio = cfg.spi_rst_gpio;
@@ -60,13 +82,14 @@ bool WssNfcReaderPn532::begin(const WssNfcPn532Config& cfg) {
       _last_error = "pins_unset";
       return false;
     }
-    if (_use_spi) {
+    if (_use_spi || _use_uart) {
       if (g_pn532) {
         delete g_pn532;
         g_pn532 = nullptr;
       }
     }
     _use_spi = false;
+    _use_uart = false;
     Wire.begin(WSS_PIN_I2C_SDA, WSS_PIN_I2C_SCL);
     if (!g_pn532) {
       g_pn532 = new Adafruit_PN532(WSS_PIN_NFC_IRQ, WSS_PIN_NFC_RESET, &Wire);

@@ -25,7 +25,7 @@
     pinPolicy: null,
     motionKind: 'gpio',
     ld2410b: { rx: 16, tx: 17, baud: LD2410B_DEFAULT_BAUD },
-    nfc: { iface: 'spi', cs: 27, irq: 32, rst: 33 },
+    nfc: { iface: 'spi', cs: 27, irq: 32, rst: 33, rx: 16, tx: 17 },
     sd: { enabled: true, cs: 13 },
     outputs: {
       hornPin: -1,
@@ -449,6 +449,12 @@
       claim(nfcIrq, 'NFC IRQ');
       checkOutput('NFC CS', nfcCs);
       checkOutput('NFC RST', nfcRst);
+    } else if (nfcIface === 'uart') {
+      const nfcRx = state.nfc.rx;
+      const nfcTx = state.nfc.tx;
+      claim(nfcRx, 'NFC UART RX');
+      claim(nfcTx, 'NFC UART TX');
+      checkOutput('NFC UART TX', nfcTx);
     }
 
     const hornPin = state.outputs.hornPin;
@@ -514,6 +520,9 @@
       rows.push({ label: 'NFC CS', value: pinValueText(state.nfc.cs) });
       rows.push({ label: 'NFC RST', value: pinValueText(state.nfc.rst) });
       rows.push({ label: 'NFC IRQ', value: pinValueText(state.nfc.irq) });
+    } else if (nfcIface === 'uart') {
+      rows.push({ label: 'NFC UART RX', value: pinValueText(state.nfc.rx) });
+      rows.push({ label: 'NFC UART TX', value: pinValueText(state.nfc.tx) });
     }
 
     rows.push({ label: 'Horn GPIO', value: pinValueText(state.outputs.hornPin) });
@@ -706,7 +715,67 @@
       nfcHealthLine.id = 'wiz_nfc_health';
       nfcHealthLine.textContent = 'NFC: Unknown until a reader is detected.';
       host.appendChild(nfcHealthLine);
-      addLabel('NFC module: PN532 (SPI).');
+      const ifaceDefault = state.nfc.iface || 'spi';
+      const ifaceSelect = addSelect('wiz_nfc_interface', 'NFC Interface', [
+        { value: 'spi', label: 'PN532 SPI' },
+        { value: 'uart', label: 'PN532 UART' },
+      ], ifaceDefault);
+
+      const uartWrap = document.createElement('div');
+      uartWrap.className = 'row';
+      host.appendChild(uartWrap);
+      function addUartSelect(id, label, options, value) {
+        const l = document.createElement('label');
+        l.className = 'small';
+        l.textContent = label;
+        uartWrap.appendChild(l);
+        const s = document.createElement('select');
+        s.id = id;
+        for (const opt of options) {
+          const o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.label;
+          s.appendChild(o);
+        }
+        if (value !== undefined) s.value = value;
+        uartWrap.appendChild(s);
+        return s;
+      }
+      const nfcUartRxPins = pinPolicyAllowed('nfc.uart_rx', LD2410B_SAFE_PINS);
+      const nfcUartTxPins = pinPolicyAllowed('nfc.uart_tx', LD2410B_SAFE_TX_PINS);
+      const nfcUartRxDefault = pinPolicyDefault('nfc.uart_rx', 16);
+      const nfcUartTxDefault = pinPolicyDefault('nfc.uart_tx', 17);
+      const nfcUartRx = nfcUartRxPins.includes(state.nfc.rx) ? state.nfc.rx : nfcUartRxDefault;
+      const nfcUartTx = nfcUartTxPins.includes(state.nfc.tx) ? state.nfc.tx : nfcUartTxDefault;
+      addUartSelect('wiz_nfc_uart_rx', 'NFC UART RX GPIO', nfcUartRxPins.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })), String(nfcUartRx));
+      addUartSelect('wiz_nfc_uart_tx', 'NFC UART TX GPIO', nfcUartTxPins.map((pin) => ({
+        value: String(pin),
+        label: `GPIO ${pin}`,
+      })), String(nfcUartTx));
+
+      const spiWrap = document.createElement('div');
+      spiWrap.className = 'row';
+      host.appendChild(spiWrap);
+      function addSpiSelect(id, label, options, value) {
+        const l = document.createElement('label');
+        l.className = 'small';
+        l.textContent = label;
+        spiWrap.appendChild(l);
+        const s = document.createElement('select');
+        s.id = id;
+        for (const opt of options) {
+          const o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.label;
+          s.appendChild(o);
+        }
+        if (value !== undefined) s.value = value;
+        spiWrap.appendChild(s);
+        return s;
+      }
       const nfcCsPins = pinPolicyAllowed('nfc.spi_cs', PN532_CS_SAFE_PINS);
       const nfcIrqPins = pinPolicyAllowed('nfc.spi_irq', PN532_IRQ_SAFE_PINS);
       const nfcRstPins = pinPolicyAllowed('nfc.spi_cs', PN532_RST_SAFE_PINS);
@@ -716,7 +785,7 @@
       const csDefault = nfcCsPins.includes(state.nfc.cs) ? state.nfc.cs : nfcCsDefault;
       const irqDefault = nfcIrqPins.includes(state.nfc.irq) ? state.nfc.irq : nfcIrqDefault;
       const rstDefault = nfcRstPins.includes(state.nfc.rst) ? state.nfc.rst : nfcRstDefault;
-      addSelect('wiz_nfc_cs', 'NFC CS (SPI)', nfcCsPins.map((pin) => ({
+      addSpiSelect('wiz_nfc_cs', 'NFC CS (SPI)', nfcCsPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })), String(csDefault));
@@ -724,12 +793,20 @@
         value: String(pin),
         label: `GPIO ${pin}`,
       })));
-      addSelect('wiz_nfc_irq', 'NFC IRQ (optional)', irqOptions, String(irqDefault));
+      addSpiSelect('wiz_nfc_irq', 'NFC IRQ (optional)', irqOptions, String(irqDefault));
       const rstOptions = [{ value: '-1', label: 'Not used' }].concat(nfcRstPins.map((pin) => ({
         value: String(pin),
         label: `GPIO ${pin}`,
       })));
-      addSelect('wiz_nfc_rst', 'NFC RST (optional)', rstOptions, String(rstDefault));
+      addSpiSelect('wiz_nfc_rst', 'NFC RST (optional)', rstOptions, String(rstDefault));
+
+      function updateNfcFields() {
+        const mode = (ifaceSelect && ifaceSelect.value) ? ifaceSelect.value : 'spi';
+        uartWrap.classList.toggle('hidden', mode !== 'uart');
+        spiWrap.classList.toggle('hidden', mode !== 'spi');
+      }
+      if (ifaceSelect) ifaceSelect.addEventListener('change', updateNfcFields);
+      updateNfcFields();
 
       addLabel('Add the first Admin card to enable Admin access.');
       addLabel('Enter the admin password, start the scan, then scan the same card twice to confirm.');
@@ -1072,11 +1149,16 @@
 
     const nfc = j.nfc || null;
     if (nfc) {
+      const nfcIface = nfc.transport || nfc.interface || 'spi';
+      const nfcUartRxDefault = pinPolicyDefault('nfc.uart_rx', state.nfc.rx);
+      const nfcUartTxDefault = pinPolicyDefault('nfc.uart_tx', state.nfc.tx);
       state.nfc = {
-        iface: nfc.interface || 'spi',
+        iface: nfcIface,
         cs: (nfc.spi_cs_gpio !== undefined) ? nfc.spi_cs_gpio : 27,
         irq: (nfc.spi_irq_gpio !== undefined) ? nfc.spi_irq_gpio : -1,
         rst: (nfc.spi_rst_gpio !== undefined) ? nfc.spi_rst_gpio : -1,
+        rx: (nfc.uart_rx_gpio !== undefined) ? nfc.uart_rx_gpio : nfcUartRxDefault,
+        tx: (nfc.uart_tx_gpio !== undefined) ? nfc.uart_tx_gpio : nfcUartTxDefault,
         lastScanMs: nfc.last_scan_ms || 0,
         lastScanResult: nfc.last_scan_result || '',
         lastRole: nfc.last_role || 'unknown',
@@ -1287,10 +1369,17 @@
     if (step === 'sensors') {
       data.motion_enabled = !!$('wiz_motion_enabled').checked;
       data.door_enabled = !!$('wiz_door_enabled').checked;
-      data.nfc_interface = 'spi';
-      if ($('wiz_nfc_cs')) data.nfc_spi_cs_gpio = parseInt($('wiz_nfc_cs').value || '27', 10) || 27;
-      if ($('wiz_nfc_irq')) data.nfc_spi_irq_gpio = parseInt($('wiz_nfc_irq').value || '-1', 10);
-      if ($('wiz_nfc_rst')) data.nfc_spi_rst_gpio = parseInt($('wiz_nfc_rst').value || '-1', 10);
+      const iface = ($('wiz_nfc_interface') && $('wiz_nfc_interface').value) || 'spi';
+      data.nfc_interface = iface;
+      if (iface === 'spi') {
+        if ($('wiz_nfc_cs')) data.nfc_spi_cs_gpio = parseInt($('wiz_nfc_cs').value || '27', 10) || 27;
+        if ($('wiz_nfc_irq')) data.nfc_spi_irq_gpio = parseInt($('wiz_nfc_irq').value || '-1', 10);
+        if ($('wiz_nfc_rst')) data.nfc_spi_rst_gpio = parseInt($('wiz_nfc_rst').value || '-1', 10);
+      }
+      if (iface === 'uart') {
+        if ($('wiz_nfc_uart_rx')) data.nfc_uart_rx_gpio = parseInt($('wiz_nfc_uart_rx').value || '-1', 10);
+        if ($('wiz_nfc_uart_tx')) data.nfc_uart_tx_gpio = parseInt($('wiz_nfc_uart_tx').value || '-1', 10);
+      }
       const kind = ($('wiz_motion_kind') && $('wiz_motion_kind').value) || 'gpio';
       data.motion_kind = kind;
       if (kind === 'ld2410b_uart') {

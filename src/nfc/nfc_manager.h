@@ -20,13 +20,18 @@ struct WssNfcStatus {
   bool reader_present = false;    // best-effort (true only if reader init succeeds)
   String health;                  // ok|disabled_cfg|disabled_build|unavailable
   String health_state;            // ok|unknown|fault
-  String interface;               // spi|i2c
+  String interface;               // spi|i2c|uart
+  String transport;               // spi|i2c|uart
+  bool present = false;
+  bool fault = false;
   String last_error;              // last reader error (no secrets)
   String driver;                  // stub|none (driver name later)
   bool driver_active = false;
   int spi_cs_gpio = -1;
   int spi_irq_gpio = -1;
   int spi_rst_gpio = -1;
+  int uart_rx_gpio = -1;
+  int uart_tx_gpio = -1;
   String last_role;               // admin|user|unknown
   String last_scan_result;        // ok|fail
   String last_scan_reason;        // allowlist_match|allowlist_unknown|reader_unavailable|uid_invalid
